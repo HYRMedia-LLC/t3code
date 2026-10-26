@@ -140,12 +140,16 @@ export function applyProviderInstanceMutation(
   mutation: ProviderInstanceMutation,
 ): ServerSettings {
   const providerInstances = { ...settings.providerInstances };
+  const removedDefaults = settings.removedDefaultProviderInstances.filter(
+    (instanceId) => instanceId !== mutation.instanceId,
+  );
   if (mutation.operation === "upsert" || mutation.operation === "create") {
     providerInstances[mutation.instanceId] = mutation.instance;
   } else {
     delete providerInstances[mutation.instanceId];
   }
-  return { ...settings, providerInstances };
+  if (mutation.operation === "removeDefault") removedDefaults.push(mutation.instanceId);
+  return { ...settings, providerInstances, removedDefaultProviderInstances: removedDefaults };
 }
 
 function ensureProviderInstanceMutationAllowed(
@@ -377,6 +381,7 @@ function migrateLegacyProviderSettings(
     const driver = kind;
     const instanceId = defaultInstanceIdForDriver(driver);
     if (Object.hasOwn(providerInstances, instanceId)) continue;
+    if (settings.removedDefaultProviderInstances.includes(instanceId)) continue;
 
     const { enabled: rawEnabled, ...config } = blob as Record<string, unknown>;
     const explicitEnabled = typeof rawEnabled === "boolean" ? rawEnabled : undefined;
@@ -420,6 +425,7 @@ function fallbackTextGenerationProvider(settings: ServerSettings): ServerSetting
   const fallback = fallbackTextGenerationModelSelection(
     settings.providerInstances,
     (instanceId, driver) =>
+      !settings.removedDefaultProviderInstances.includes(instanceId) &&
       resolveProviderInstanceEnabled(
         settings.providerInstances[instanceId] ?? { driver, config: {} },
       ),

@@ -842,6 +842,59 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect("keeps a removed default instance removed until it is created again", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const codex = ProviderInstanceId.make("codex");
+
+      const removed = yield* serverSettings.updateProviderInstance({
+        operation: "removeDefault",
+        instanceId: codex,
+      });
+      assert.deepEqual(removed.removedDefaultProviderInstances, [codex]);
+      assert.notEqual(removed.textGenerationModelSelection.instanceId, codex);
+      assert.deepEqual(
+        JSON.parse(yield* fileSystem.readFileString(serverConfig.settingsPath))
+          .removedDefaultProviderInstances,
+        [codex],
+      );
+
+      const created = yield* serverSettings.updateProviderInstance({
+        operation: "create",
+        instanceId: codex,
+        instance: { driver: ProviderDriverKind.make("codex") },
+      });
+      assert.deepEqual(created.removedDefaultProviderInstances, []);
+      assert.deepEqual(created.providerInstances[codex], {
+        driver: ProviderDriverKind.make("codex"),
+      });
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("does not restore a removed default instance from legacy provider settings", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        JSON.stringify({
+          providers: { codex: { binaryPath: "/legacy/codex" } },
+          removedDefaultProviderInstances: ["codex"],
+        }),
+      );
+
+      const settings = yield* serverSettings.getSettings;
+
+      assert.isUndefined(settings.providerInstances[ProviderInstanceId.make("codex")]);
+      assert.deepEqual(settings.removedDefaultProviderInstances, [
+        ProviderInstanceId.make("codex"),
+      ]);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("keeps an explicit default instance over the legacy blob for its driver", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;

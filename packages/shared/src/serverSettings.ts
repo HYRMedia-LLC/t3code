@@ -75,7 +75,7 @@ export function isModelSelectionProviderEnabled(
     return resolveProviderInstanceEnabled(instanceConfig);
   }
 
-  return isUnconfiguredDefaultInstanceEnabled(selection.instanceId);
+  return isUnconfiguredDefaultInstanceEnabled(settings, selection.instanceId);
 }
 
 const TEXT_GENERATION_FALLBACK_DRIVERS = [

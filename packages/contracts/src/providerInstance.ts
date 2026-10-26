@@ -80,6 +80,11 @@ export const ProviderInstanceMutation = Schema.Union([
     operation: Schema.Literal("remove"),
     instanceId: ProviderInstanceId,
   }),
+  // Unlike `remove`, which resets a default slot, this keeps the default from being re-synthesized.
+  Schema.Struct({
+    operation: Schema.Literal("removeDefault"),
+    instanceId: ProviderInstanceId,
+  }),
 ]);
 export type ProviderInstanceMutation = typeof ProviderInstanceMutation.Type;
 

@@ -33,6 +33,11 @@ and that turn had not run any commands or edits yet, T3 Code sends your message 
 If you sign in from another device and the final `localhost` page does not load, copy its
 full URL and paste it in T3 Code when it asks.
 
+To use only LiteLLM, open the built-in **Codex** and **Claude** providers in
+**Settings > Providers** and delete them. They stay deleted after restarts. To get one back,
+choose **Add provider** and add it with its default ID (`codex` or `claudeAgent`). Threads
+that used a deleted provider are kept, the same as when you delete any other provider.
+
 ## Models
 
 - **LiteLLM Claude** lists every model the gateway offers.

@@ -17,6 +17,18 @@ function settingsWith(overrides: Partial<ServerSettings>): ServerSettings {
 }
 
 describe("deriveProviderInstanceConfigMap", () => {
+  it("does not synthesize a default instance the user removed", () => {
+    const codex = ProviderInstanceId.make("codex");
+    const merged = deriveProviderInstanceConfigMap(
+      settingsWith({ removedDefaultProviderInstances: [codex] }),
+    );
+
+    expect(merged[codex]).toBeUndefined();
+    expect(merged[ProviderInstanceId.make("claudeAgent")]).toEqual({
+      driver: ProviderDriverKind.make("claudeAgent"),
+    });
+  });
+
   it("turns a machine-disabled instance on when a project enables it", () => {
     const settings = settingsWith({
       providerInstances: {

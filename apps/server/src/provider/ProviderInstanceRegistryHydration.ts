@@ -41,7 +41,9 @@ export const deriveProviderInstanceConfigMap = (
   for (const driver of BUILT_IN_DRIVERS) {
     if (driver.metadata.hasDefaultInstance === false) continue;
     const instanceId = defaultInstanceIdForDriver(driver.driverKind);
-    if (instanceId in merged) continue;
+    if (instanceId in merged || settings.removedDefaultProviderInstances.includes(instanceId)) {
+      continue;
+    }
     merged[instanceId] = { driver: driver.driverKind };
   }
 
