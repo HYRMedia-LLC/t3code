@@ -51,6 +51,10 @@
       "types": "./src/server/instanceIdentity.ts",
       "import": "./src/server/instanceIdentity.ts"
     },
+    "./server/litellm": {
+      "types": "./src/server/litellm.ts",
+      "import": "./src/server/litellm.ts"
+    },
     "./server/maintenance": {
       "types": "./src/server/maintenance.ts",
       "import": "./src/server/maintenance.ts"

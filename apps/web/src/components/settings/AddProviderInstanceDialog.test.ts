@@ -5,6 +5,7 @@ import {
   getProviderIdentityDraft,
   resolveAcpRegistryWizardNavigation,
   resolveWizardNavigation,
+  setLiteLLMLauncher,
   updateProviderIdentityDraft,
 } from "./AddProviderInstanceDialog.logic";
 
@@ -82,5 +83,15 @@ describe("ACP Registry wizard", () => {
       label: "Gemini CLI",
       instanceIdOverride: "acpRegistry_gemini_cli",
     });
+  });
+});
+
+describe("LiteLLM launcher identity", () => {
+  it("swaps the suggested label with the launcher but keeps a typed label", () => {
+    const draft = { label: "Claude", accentColor: "", instanceIdOverride: null };
+    const on = setLiteLLMLauncher(draft, "Claude", true);
+    expect([on.label, on.liteLLM]).toEqual(["LiteLLM Claude", true]);
+    expect(setLiteLLMLauncher(on, "Claude", false).label).toBe("Claude");
+    expect(setLiteLLMLauncher({ ...draft, label: "Work" }, "Claude", true).label).toBe("Work");
   });
 });

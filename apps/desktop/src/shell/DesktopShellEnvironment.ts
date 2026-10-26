@@ -94,6 +94,7 @@ const LOGIN_SHELL_ENV_NAMES = [
   "SSL_CERT_FILE",
   "SSL_CERT_DIR",
   "NODE_EXTRA_CA_CERTS",
+  "LITELLM_PROXY_URL",
   "T3CODE_TELEMETRY_ENABLED",
   "__MISE_DIFF",
 ] as const;
@@ -449,6 +450,9 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
       "SSL_CERT_FILE",
       "SSL_CERT_DIR",
       "NODE_EXTRA_CA_CERTS",
+      // The gateway `lite` routes LiteLLM provider instances through. Its key
+      // stays in `lite`'s own store, so no LiteLLM secret comes from the shell.
+      "LITELLM_PROXY_URL",
       "T3CODE_TELEMETRY_ENABLED",
     ] as const) {
       if (!config.env[name] && shellEnvironment[name]) {

@@ -109,19 +109,31 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
   }
 
   const typedConfig = decodeResult.success;
+  const create =
+    entry.launcher === undefined ? driver.create : driver.launchers?.[entry.launcher]?.create;
+  if (!create) {
+    return {
+      kind: "unavailable" as const,
+      snapshot: yield* buildUnavailableProviderSnapshot({
+        driverKind: entry.driver,
+        instanceId,
+        displayName: entry.displayName,
+        accentColor: entry.accentColor,
+        reason: `Driver '${entry.driver}' cannot run through the '${entry.launcher}' launcher.`,
+      }),
+    };
+  }
   const childScope = yield* Scope.make();
   yield* Scope.addFinalizer(parentScope, Scope.close(childScope, Exit.void).pipe(Effect.ignore));
 
-  const createResult = yield* driver
-    .create({
-      instanceId,
-      displayName: entry.displayName,
-      accentColor: entry.accentColor,
-      environment: entry.environment ?? [],
-      enabled: resolveEntryEnabled(entry, typedConfig),
-      config: typedConfig,
-    })
-    .pipe(Effect.provideService(Scope.Scope, childScope), Effect.result);
+  const createResult = yield* create({
+    instanceId,
+    displayName: entry.displayName,
+    accentColor: entry.accentColor,
+    environment: entry.environment ?? [],
+    enabled: resolveEntryEnabled(entry, typedConfig),
+    config: typedConfig,
+  }).pipe(Effect.provideService(Scope.Scope, childScope), Effect.result);
   if (createResult._tag === "Failure") {
     yield* Effect.logError("Failed to create provider instance", {
       instanceId: rawInstanceId,

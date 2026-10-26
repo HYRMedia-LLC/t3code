@@ -8,6 +8,7 @@ import type {
   ProviderDriverKind,
   ProviderInstanceEnvironment,
   ProviderInstanceId,
+  ProviderInstanceLauncher,
   ServerProvider,
   ServerProviderWorkspaceSnapshot,
 } from "@t3tools/contracts";
@@ -113,6 +114,10 @@ export interface ProviderDriver<Config, R = never, UsageR = never> {
     input: ProviderDriverCreateInput<Config>,
   ) => Effect.Effect<ProviderInstance, ProviderDriverError, R | Scope.Scope>;
   readonly usage?: ProviderUsageReader<Config, UsageR>;
+  /** Variants of this driver that start its CLI through a launcher such as `lite`. */
+  readonly launchers?: Partial<
+    Record<ProviderInstanceLauncher, Pick<ProviderDriver<Config, R, UsageR>, "create">>
+  >;
 }
 
 export type AnyProviderDriver<R = never, UsageR = unknown> = ProviderDriver<any, R, UsageR>;

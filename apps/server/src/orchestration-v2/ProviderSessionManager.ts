@@ -64,6 +64,7 @@ const UNLOAD_THREAD_TIMEOUT_MS = 10 * 1000;
 
 export const ProviderSessionReleaseReason = Schema.Literals([
   "idle_timeout",
+  "credentials_renewed",
   "runtime_error",
   "manual_shutdown",
   "server_shutdown",
@@ -169,6 +170,8 @@ export interface ProviderSessionManagerV2Shape {
   readonly closeInstance: (
     instanceId: ProviderInstanceId,
   ) => Effect.Effect<void, ProviderSessionManagerV2Error>;
+  /** True when the instance's sessions keep the key they started with until they are replaced. */
+  readonly keepsStartupCredentials: (instanceId: ProviderInstanceId) => Effect.Effect<boolean>;
   readonly release: (input: {
     readonly providerSessionId: ProviderSessionId;
     readonly reason: ProviderSessionReleaseReason;
@@ -206,6 +209,10 @@ interface LiveSessionEntry {
   readonly idleFiber: Fiber.Fiber<void, never> | null;
   readonly pinnedSinceMs: number | null;
   readonly idleThreadUnloads: ReadonlyMap<ThreadId, IdleThreadUnload>;
+  readonly credentialGeneration: {
+    readonly current: Effect.Effect<string | undefined>;
+    readonly openedWith: string | undefined;
+  } | null;
 }
 
 interface IdleThreadUnload {
@@ -1145,6 +1152,35 @@ export const layerWithOptions = (
         },
       );
 
+      // The process keeps the key it started with, so after a renewal the next
+      // turn gets a fresh process (resumed from the stored session) instead of
+      // failing when the old key expires. Busy sessions and pending background
+      // work keep their process; a later turn replaces it.
+      const replaceIfCredentialsRenewed = Effect.fn(
+        "ProviderSessionManager.replaceIfCredentialsRenewed",
+      )(function* (
+        providerSessionId: ProviderSessionId,
+        entry: LiveSessionEntry | undefined,
+      ): Effect.fn.Return<LiveSessionEntry | undefined> {
+        if (entry?.credentialGeneration == null || entry.busyTurns.size > 0) return entry;
+        const current = yield* entry.credentialGeneration.current;
+        if (current === undefined || current === entry.credentialGeneration.openedWith)
+          return entry;
+        const hasPendingWork =
+          entry.runtime.hasPendingBackgroundWork === undefined
+            ? false
+            : yield* entry.runtime.hasPendingBackgroundWork.pipe(
+                Effect.catchCause(() => Effect.succeed(true)),
+              );
+        if (hasPendingWork) return entry;
+        yield* releaseEntry({
+          providerSessionId,
+          reason: "credentials_renewed",
+          onlyIfIdleGeneration: entry.idleGeneration,
+        }).pipe(logReleaseFailure(providerSessionId));
+        return (yield* Ref.get(sessions)).get(sessionKey(providerSessionId));
+      });
+
       const withActivityError = <A, E, R>(
         providerSessionId: ProviderSessionId,
         effect: Effect.Effect<A, E, R>,
@@ -2065,7 +2101,10 @@ export const layerWithOptions = (
                 }
               }
               const key = sessionKey(input.providerSessionId);
-              const existing = (yield* Ref.get(sessions)).get(key);
+              const existing = yield* replaceIfCredentialsRenewed(
+                input.providerSessionId,
+                (yield* Ref.get(sessions)).get(key),
+              );
               if (existing !== undefined) {
                 const attached = existing.attachedThreadIds.has(input.threadId);
                 if (!attached && !existing.supportsMultipleProviderThreads) {
@@ -2163,6 +2202,13 @@ export const layerWithOptions = (
                 ReadonlyMap<number, Queue.Queue<ProviderSessionEventSignal, Cause.Done>>
               >(new Map());
               const exposedRuntime = decorateRuntime(runtime, eventSubscribers);
+              const credentialGeneration =
+                adapter.credentialGeneration === undefined
+                  ? null
+                  : {
+                      current: adapter.credentialGeneration,
+                      openedWith: yield* adapter.credentialGeneration,
+                    };
               const now = yield* Clock.currentTimeMillis;
               const entry: LiveSessionEntry = {
                 attachedThreadIds: new Set([input.threadId]),
@@ -2185,6 +2231,7 @@ export const layerWithOptions = (
                 idleFiber: null,
                 pinnedSinceMs: null,
                 idleThreadUnloads: new Map(),
+                credentialGeneration,
               };
               yield* Ref.update(sessions, (current) => {
                 const updated = new Map(current);
@@ -2290,6 +2337,11 @@ export const layerWithOptions = (
               ),
             ),
         ),
+        keepsStartupCredentials: (instanceId) =>
+          registry.get(instanceId).pipe(
+            Effect.map((adapter) => adapter.credentialGeneration !== undefined),
+            Effect.orElseSucceed(() => false),
+          ),
         release: releaseEntry,
         detach: Effect.fn("ProviderSessionManager.detach")(
           function* (input) {

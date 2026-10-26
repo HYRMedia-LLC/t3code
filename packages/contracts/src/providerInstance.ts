@@ -46,6 +46,13 @@ export type ProviderInstanceEnvironmentVariable = typeof ProviderInstanceEnviron
 export const ProviderInstanceEnvironment = Schema.Array(ProviderInstanceEnvironmentVariable);
 export type ProviderInstanceEnvironment = typeof ProviderInstanceEnvironment.Type;
 
+/**
+ * How the driver's CLI is started. Absent means the CLI runs directly; `litellm`
+ * runs it through `lite <harness>` so a LiteLLM gateway owns routing and keys.
+ */
+export const ProviderInstanceLauncher = Schema.Literal("litellm");
+export type ProviderInstanceLauncher = typeof ProviderInstanceLauncher.Type;
+
 /** Drivers decode their own config; unknown-driver envelopes round-trip verbatim across versions. */
 export const ProviderInstanceConfig = Schema.Struct({
   driver: ProviderDriverKind,
@@ -53,6 +60,7 @@ export const ProviderInstanceConfig = Schema.Struct({
   accentColor: Schema.optional(TrimmedNonEmptyString),
   environment: Schema.optionalKey(ProviderInstanceEnvironment),
   enabled: Schema.optionalKey(Schema.Boolean),
+  launcher: Schema.optionalKey(ProviderInstanceLauncher),
   config: Schema.optionalKey(Schema.Unknown),
 });
 export type ProviderInstanceConfig = typeof ProviderInstanceConfig.Type;

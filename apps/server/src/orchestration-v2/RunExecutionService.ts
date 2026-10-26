@@ -41,6 +41,7 @@ import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
 import * as PreviewAgentActivity from "../preview/PreviewAgentActivity.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { isGatewayAuthRejection } from "./ProviderAuthRetry.ts";
 import * as CheckpointService from "./CheckpointService.ts";
 import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -731,6 +732,10 @@ export const layer: Layer.Layer<
           `command:effect:checkpoint.capture:${input.run.id}`,
         );
         // Stopped runs capture rollback points for the next message; enqueue before later starts on this effect lane.
+        const authRetrySessionId =
+          input.terminal.status === "failed" && isGatewayAuthRejection(input.terminal.failure)
+            ? input.providerThread.providerSessionId
+            : null;
         const finalization = {
           effects:
             input.terminal.status === "completed" ||
@@ -748,7 +753,22 @@ export const layer: Layer.Layer<
                     },
                   },
                 ]
-              : [],
+              : authRetrySessionId !== null
+                ? [
+                    {
+                      id: `effect:provider-auth.retry:${input.run.id}`,
+                      commandId: CommandId.make(
+                        `command:effect:provider-auth.retry:${input.run.id}`,
+                      ),
+                      threadId: input.run.threadId,
+                      request: {
+                        type: "provider-auth.retry" as const,
+                        sourceRunId: input.run.id,
+                        providerSessionId: authRetrySessionId,
+                      },
+                    },
+                  ]
+                : [],
           events: [
             ...cascadedSubagentEvents,
             ...(input.abandonedProviderTurn === undefined

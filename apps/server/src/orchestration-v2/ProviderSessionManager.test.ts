@@ -336,6 +336,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
     readonly beforeUnload?: Effect.Effect<void>;
     readonly spawnBeforeOpen?: boolean;
     readonly scopeCloseReached?: Deferred.Deferred<void>;
+    readonly credentialGeneration?: Effect.Effect<string | undefined>;
   } = {},
 ) {
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
@@ -357,6 +358,9 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
     driver: CODEX_DRIVER,
     getCapabilities: () => Effect.succeed(options.capabilities ?? CodexCapabilities),
     planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" }),
+    ...(options.credentialGeneration === undefined
+      ? {}
+      : { credentialGeneration: options.credentialGeneration }),
     openSession: (input) =>
       Effect.gen(function* () {
         if (options.spawnBeforeOpen === true) {
@@ -483,6 +487,7 @@ function layerTest(input: {
   readonly beforeUnload?: Effect.Effect<void>;
   readonly spawnBeforeOpen?: boolean;
   readonly scopeCloseReached?: Deferred.Deferred<void>;
+  readonly credentialGeneration?: Effect.Effect<string | undefined>;
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
   readonly projectServiceLayer?: Layer.Layer<ProjectService.ProjectService>;
 }) {
@@ -520,6 +525,9 @@ function layerTest(input: {
       ...(input.scopeCloseReached === undefined
         ? {}
         : { scopeCloseReached: input.scopeCloseReached }),
+      ...(input.credentialGeneration === undefined
+        ? {}
+        : { credentialGeneration: input.credentialGeneration }),
     }).pipe(Effect.map(ProviderAdapterRegistry.layerSingle)),
   );
   const layerConfiguredMcpRegistry =
@@ -948,6 +956,46 @@ it.effect("ProviderSessionManagerV2 closes every live session for a provider ins
           state,
           idleTimeoutMs: 60_000,
         }),
+      ),
+    );
+  }),
+);
+
+it.effect("ProviderSessionManagerV2 replaces an idle session after its key is renewed", () =>
+  Effect.gen(function* () {
+    const state = yield* Ref.make(emptyState);
+    const generation = yield* Ref.make<string | undefined>("key-1");
+    const effect = Effect.gen(function* () {
+      const eventSink = yield* EventSink.EventSinkV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+      const now = yield* DateTime.now;
+      const threadId = ThreadId.make("thread-provider-session-manager-renewed-key");
+      const providerSessionId = yield* idAllocator.allocate.providerSession({
+        providerInstanceId: modelSelection.instanceId,
+        threadId,
+      });
+      yield* eventSink.write({
+        events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+      });
+      const open = manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+
+      const first = yield* open;
+      assert.strictEqual(yield* open, first);
+      assert.isTrue(yield* manager.keepsStartupCredentials(modelSelection.instanceId));
+
+      yield* Ref.set(generation, "key-2");
+      const second = yield* open;
+      assert.notStrictEqual(second, first);
+      assert.deepEqual(
+        [(yield* Ref.get(state)).openCount, (yield* Ref.get(state)).closeCount],
+        [2, 1],
+      );
+    });
+
+    yield* effect.pipe(
+      Effect.provide(
+        layerTest({ state, idleTimeoutMs: 60_000, credentialGeneration: Ref.get(generation) }),
       ),
     );
   }),

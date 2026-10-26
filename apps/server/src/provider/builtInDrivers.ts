@@ -14,6 +14,12 @@ import type {
   AnyProviderDriver,
   ProviderUsageReaderEnv,
 } from "@t3tools/provider-core/server/driver";
+import {
+  withLiteLLMLauncher,
+  type LiteLLMLauncherEnv,
+} from "@t3tools/provider-core/server/litellm";
+
+import { LITELLM_CLAUDE, LITELLM_CODEX, LITELLM_OPENCODE, LITELLM_PI } from "./liteLLMLaunchers.ts";
 
 export type BuiltInDriversEnv =
   | AcpRegistryDriverEnv
@@ -24,16 +30,17 @@ export type BuiltInDriversEnv =
   | GrokDriverEnv
   | OpenCodeDriverEnv
   | PiDriverEnv
-  | MuseDriverEnv;
+  | MuseDriverEnv
+  | LiteLLMLauncherEnv;
 
 export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = [
-  CodexDriver,
-  ClaudeDriver,
+  withLiteLLMLauncher(CodexDriver, LITELLM_CODEX),
+  withLiteLLMLauncher(ClaudeDriver, LITELLM_CLAUDE),
   CursorDriver,
   GrokDriver,
-  OpenCodeDriver,
+  withLiteLLMLauncher(OpenCodeDriver, LITELLM_OPENCODE),
   AntigravityDriver,
-  PiDriver,
+  withLiteLLMLauncher(PiDriver, LITELLM_PI),
   MuseDriver,
   AcpRegistryDriver,
 ];

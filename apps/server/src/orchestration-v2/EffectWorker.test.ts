@@ -110,6 +110,7 @@ function layerExecutorFor(input: {
         isLive: () => Effect.succeed(false),
         close: () => Effect.void,
         closeInstance: () => Effect.void,
+        keepsStartupCredentials: () => Effect.succeed(false),
         release: () => record("release"),
         detach: () => record("detach"),
       }),
