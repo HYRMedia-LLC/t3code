@@ -177,6 +177,12 @@ export interface ProviderSessionManagerV2Shape {
     readonly reason: ProviderSessionReleaseReason;
     readonly detail?: string;
   }) => Effect.Effect<void, ProviderSessionManagerV2Error>;
+  /** Releases only a session no turn or background work holds. True when no live session remains. */
+  readonly releaseIfIdle: (input: {
+    readonly providerSessionId: ProviderSessionId;
+    readonly reason: ProviderSessionReleaseReason;
+    readonly detail?: string;
+  }) => Effect.Effect<boolean, ProviderSessionManagerV2Error>;
   readonly detach: (input: {
     readonly providerSessionId: ProviderSessionId;
     readonly threadId: ThreadId;
@@ -1152,6 +1158,26 @@ export const layerWithOptions = (
         },
       );
 
+      const releaseIfIdle = Effect.fn("ProviderSessionManager.releaseIfIdle")(function* (input: {
+        readonly providerSessionId: ProviderSessionId;
+        readonly reason: ProviderSessionReleaseReason;
+        readonly detail?: string;
+      }) {
+        const key = sessionKey(input.providerSessionId);
+        const entry = (yield* Ref.get(sessions)).get(key);
+        if (entry === undefined) return true;
+        if (entry.busyTurns.size > 0) return false;
+        const hasPendingWork =
+          entry.runtime.hasPendingBackgroundWork === undefined
+            ? false
+            : yield* entry.runtime.hasPendingBackgroundWork.pipe(
+                Effect.catchCause(() => Effect.succeed(true)),
+              );
+        if (hasPendingWork) return false;
+        yield* releaseEntry({ ...input, onlyIfIdleGeneration: entry.idleGeneration });
+        return (yield* Ref.get(sessions)).get(key) !== entry;
+      });
+
       // The process keeps the key it started with, so after a renewal the next
       // turn gets a fresh process (resumed from the stored session) instead of
       // failing when the old key expires. Busy sessions and pending background
@@ -1166,18 +1192,10 @@ export const layerWithOptions = (
         const current = yield* entry.credentialGeneration.current;
         if (current === undefined || current === entry.credentialGeneration.openedWith)
           return entry;
-        const hasPendingWork =
-          entry.runtime.hasPendingBackgroundWork === undefined
-            ? false
-            : yield* entry.runtime.hasPendingBackgroundWork.pipe(
-                Effect.catchCause(() => Effect.succeed(true)),
-              );
-        if (hasPendingWork) return entry;
-        yield* releaseEntry({
-          providerSessionId,
-          reason: "credentials_renewed",
-          onlyIfIdleGeneration: entry.idleGeneration,
-        }).pipe(logReleaseFailure(providerSessionId));
+        yield* releaseIfIdle({ providerSessionId, reason: "credentials_renewed" }).pipe(
+          Effect.asVoid,
+          logReleaseFailure(providerSessionId),
+        );
         return (yield* Ref.get(sessions)).get(sessionKey(providerSessionId));
       });
 
@@ -2343,6 +2361,7 @@ export const layerWithOptions = (
             Effect.orElseSucceed(() => false),
           ),
         release: releaseEntry,
+        releaseIfIdle,
         detach: Effect.fn("ProviderSessionManager.detach")(
           function* (input) {
             const key = sessionKey(input.providerSessionId);

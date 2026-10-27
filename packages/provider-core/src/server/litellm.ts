@@ -227,7 +227,12 @@ export interface LiteLLMLauncherSpec<Config> {
   /** Points the driver at the shim and at an instance-owned home that `lite` may write to. */
   readonly configure: (
     config: Config,
-    launch: { readonly binaryPath: string; readonly homeDir: string },
+    launch: {
+      readonly binaryPath: string;
+      readonly homeDir: string;
+      /** The environment the harness process starts with. */
+      readonly environment: NodeJS.ProcessEnv;
+    },
   ) => Effect.Effect<Config, string>;
   /** Environment that places the harness home; user values win. */
   readonly homeEnvironment?: (homeDir: string) => Record<string, string>;
@@ -391,9 +396,6 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
       yield* fileSystem.chmod(binaryPath, 0o755);
     }).pipe(Effect.mapError((cause) => fail("Could not write the LiteLLM launcher.", cause)));
 
-    const config = yield* spec
-      .configure(input.config, { binaryPath, homeDir })
-      .pipe(Effect.mapError((detail) => fail(detail)));
     const userEnvironment = new Set(input.environment.map((variable) => variable.name));
     const environment = [
       ...input.environment,
@@ -401,8 +403,11 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
         .filter(([name]) => !userEnvironment.has(name))
         .map(([name, value]) => ({ name, value, sensitive: false })),
     ];
-    const instance = yield* driver.create({ ...input, config, environment });
     const processEnv = yield* mergeProviderInstanceEnvironment(environment);
+    const config = yield* spec
+      .configure(input.config, { binaryPath, homeDir, environment: processEnv })
+      .pipe(Effect.mapError((detail) => fail(detail)));
+    const instance = yield* driver.create({ ...input, config, environment });
 
     const withModels = spec.gatewayModelCapabilities !== undefined;
     const cached = yield* SubscriptionRef.make<

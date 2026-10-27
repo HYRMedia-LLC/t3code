@@ -280,6 +280,7 @@ it.effect(
           closeInstance: () => Effect.void,
           keepsStartupCredentials: () => Effect.succeed(false),
           release: () => Effect.void,
+          releaseIfIdle: () => Effect.succeed(true),
           detach: () => Effect.void,
         }),
       );

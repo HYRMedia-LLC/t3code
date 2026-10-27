@@ -87,11 +87,13 @@ export const retryAfterGatewayAuthRejection = Effect.fn(
   );
   if (sourceMessage === undefined) return;
 
-  yield* providerSessions.release({
+  // Codex runs every thread in one process: never stop another thread's turn to retry this one.
+  const replaced = yield* providerSessions.releaseIfIdle({
     providerSessionId: input.providerSessionId,
     reason: "credentials_renewed",
     detail: "The gateway rejected the session's key.",
   });
+  if (!replaced) return;
   yield* threads.dispatch({
     type: "message.dispatch",
     commandId: CommandId.make(`command:auth-retry:${input.sourceRunId}`),

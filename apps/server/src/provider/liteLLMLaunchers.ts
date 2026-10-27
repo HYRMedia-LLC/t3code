@@ -6,6 +6,7 @@ import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
 import * as Effect from "effect/Effect";
 
 import { DEFAULT_CLAUDE_MODEL_CAPABILITIES } from "./ClaudeProvider.ts";
+import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
 
 // Codex drops root-level `-c` overrides, which is where `lite codex` puts the
 // gateway provider, once any `-c` follows a subcommand (BerriAI/litellm#40651).
@@ -17,8 +18,12 @@ export const LITELLM_CODEX: LiteLLMLauncherSpec<CodexSettings> = {
   configure: (config, launch) =>
     config.setupMode === "managed"
       ? Effect.fail("A T3-managed Codex cannot run through LiteLLM.")
-      : tokenizeCliArgs(config.launchArgs).some((arg) => CODEX_CONFIG_FLAG.test(arg))
-        ? Effect.fail("Remove -c/--config from Launch arguments to run Codex through LiteLLM.")
+      : tokenizeCliArgs(resolveCodexLaunchArgs(config.launchArgs, launch.environment)).some((arg) =>
+            CODEX_CONFIG_FLAG.test(arg),
+          )
+        ? Effect.fail(
+            "Remove -c/--config from Launch arguments and T3CODE_CODEX_LAUNCH_ARGS to run Codex through LiteLLM.",
+          )
         : Effect.succeed({
             ...config,
             binaryPath: launch.binaryPath,

@@ -112,6 +112,7 @@ function layerExecutorFor(input: {
         closeInstance: () => Effect.void,
         keepsStartupCredentials: () => Effect.succeed(false),
         release: () => record("release"),
+        releaseIfIdle: () => Effect.succeed(true),
         detach: () => record("detach"),
       }),
     ),

@@ -53,7 +53,7 @@ const projection = (
 
 const run = (
   records: OrchestrationV2ThreadProjection,
-  options: { readonly keepsStartupCredentials?: boolean } = {},
+  options: { readonly keepsStartupCredentials?: boolean; readonly sessionBusy?: boolean } = {},
 ) =>
   Effect.gen(function* () {
     const commands: Array<
@@ -78,9 +78,10 @@ const run = (
           }),
           Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
             keepsStartupCredentials: () => Effect.succeed(options.keepsStartupCredentials ?? true),
-            release: (input) => {
+            releaseIfIdle: (input) => {
+              if (options.sessionBusy === true) return Effect.succeed(false);
               released.push(input.providerSessionId);
-              return Effect.void;
+              return Effect.succeed(true);
             },
           }),
         ),
@@ -142,5 +143,13 @@ it.effect("leaves the failure alone when retrying could repeat or loop", () =>
     }
     const native = yield* run(projection(), { keepsStartupCredentials: false });
     assert.deepEqual([native.commands.length, native.released.length], [0, 0]);
+  }),
+);
+
+it.effect("keeps a shared session that another thread is still using", () =>
+  Effect.gen(function* () {
+    const { commands, released } = yield* run(projection(), { sessionBusy: true });
+    assert.deepEqual(released, []);
+    assert.deepEqual(commands, []);
   }),
 );

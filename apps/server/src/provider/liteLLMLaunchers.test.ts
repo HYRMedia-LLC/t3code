@@ -8,7 +8,11 @@ import { LITELLM_CODEX, LITELLM_OPENCODE } from "./liteLLMLaunchers.ts";
 
 const decodeCodex = Schema.decodeSync(CodexSettings);
 const decodeOpenCode = Schema.decodeSync(OpenCodeSettings);
-const launch = { binaryPath: "/state/litellm/x/bin/codex", homeDir: "/state/litellm/x/home" };
+const launch = {
+  binaryPath: "/state/litellm/x/bin/codex",
+  homeDir: "/state/litellm/x/home",
+  environment: {},
+};
 const codex = (input: Partial<CodexSettings>) =>
   LITELLM_CODEX.configure(decodeCodex(input), launch).pipe(Effect.flip);
 const defaults = decodeCodex({});
@@ -29,6 +33,11 @@ it.effect("refuses Codex launch args that would bypass the gateway", () =>
     assert.match(yield* codex({ launchArgs: '-c model="o3"' }), /-c\/--config/);
     assert.match(yield* codex({ launchArgs: "--config=model=o3" }), /-c\/--config/);
     assert.match(yield* codex({ setupMode: "managed" }), /T3-managed/);
+    const fromEnvironment = yield* LITELLM_CODEX.configure(defaults, {
+      ...launch,
+      environment: { T3CODE_CODEX_LAUNCH_ARGS: '-c model="o3"' },
+    }).pipe(Effect.flip);
+    assert.match(fromEnvironment, /T3CODE_CODEX_LAUNCH_ARGS/);
   }),
 );
 
