@@ -26,19 +26,16 @@ import {
 const FOLDED_SERVER_SETTINGS = { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true };
 
 describe("fallbackTextGenerationModelSelection", () => {
-  it("ignores a configured non-default instance at machine scope, matching no fallback", () => {
+  it("prefers an enabled built-in default over a configured instance", () => {
     const configured = ProviderInstanceId.make("codex_work");
     const providerInstances = {
       [configured]: { driver: ProviderDriverKind.make("codex"), config: {} },
     };
-    const fallback = fallbackTextGenerationModelSelection(
-      providerInstances,
-      (instanceId) => instanceId === configured,
-    );
-    expect(fallback).toBeNull();
+    const fallback = fallbackTextGenerationModelSelection(providerInstances, () => true);
+    expect(fallback?.instanceId).toBe(ProviderInstanceId.make("codex"));
   });
 
-  it("considers a configured non-default instance only when asked to", () => {
+  it("falls back to a configured instance when no built-in default is enabled", () => {
     const configured = ProviderInstanceId.make("codex_work");
     const providerInstances = {
       [configured]: { driver: ProviderDriverKind.make("codex"), config: {} },
@@ -46,7 +43,6 @@ describe("fallbackTextGenerationModelSelection", () => {
     const fallback = fallbackTextGenerationModelSelection(
       providerInstances,
       (instanceId) => instanceId === configured,
-      { includeConfiguredInstances: true },
     );
     expect(fallback?.instanceId).toBe(configured);
   });

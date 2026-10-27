@@ -873,6 +873,28 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect("falls back to a configured instance after both built-in defaults are removed", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const liteLLMCodex = ProviderInstanceId.make("litellm_codex");
+      yield* serverSettings.updateProviderInstance({
+        operation: "create",
+        instanceId: liteLLMCodex,
+        instance: { driver: ProviderDriverKind.make("codex"), launcher: "litellm" },
+      });
+      yield* serverSettings.updateProviderInstance({
+        operation: "removeDefault",
+        instanceId: ProviderInstanceId.make("codex"),
+      });
+      const settings = yield* serverSettings.updateProviderInstance({
+        operation: "removeDefault",
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+      });
+
+      assert.equal(settings.textGenerationModelSelection.instanceId, liteLLMCodex);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("does not restore a removed default instance from legacy provider settings", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
