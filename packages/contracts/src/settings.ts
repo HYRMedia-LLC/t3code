@@ -1246,10 +1246,6 @@ export const ServerSettings = Schema.Struct({
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
-  // Default slots the user removed; only provider instance mutations change it.
-  removedDefaultProviderInstances: Schema.Array(ProviderInstanceId).pipe(
-    Schema.withDecodingDefault(Effect.succeed([])),
-  ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   sourceControlHosts: Schema.Record(Schema.String, SourceControlHostSettings).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
@@ -1293,17 +1289,8 @@ const DEFAULT_ENABLED_DEFAULT_INSTANCES: ReadonlySet<ProviderInstanceId> = new S
   ["codex", "claudeAgent"].map((instanceId) => ProviderInstanceId.make(instanceId)),
 );
 
-// Optional because servers from before removable defaults do not send the field.
-type RemovedDefaultProviderInstances = Partial<
-  Pick<ServerSettings, "removedDefaultProviderInstances">
->;
-
-export const isUnconfiguredDefaultInstanceEnabled = (
-  settings: RemovedDefaultProviderInstances,
-  instanceId: ProviderInstanceId,
-): boolean =>
-  DEFAULT_ENABLED_DEFAULT_INSTANCES.has(instanceId) &&
-  settings.removedDefaultProviderInstances?.includes(instanceId) !== true;
+export const isUnconfiguredDefaultInstanceEnabled = (instanceId: ProviderInstanceId): boolean =>
+  DEFAULT_ENABLED_DEFAULT_INSTANCES.has(instanceId);
 
 const defaultEnabledForDriver = (driver: ProviderDriverKind): boolean =>
   !DEFAULT_DISABLED_PROVIDER_DRIVERS.has(driver);
@@ -1319,28 +1306,21 @@ export const resolveProviderInstanceEnabled = (
 };
 
 export const resolveProjectProviderInstanceEnabled = (
-  settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides"> &
-    RemovedDefaultProviderInstances,
+  settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">,
   projectId: ProjectId | null,
   instanceId: ProviderInstanceId,
 ): boolean => {
-  const instanceConfig = Object.hasOwn(settings.providerInstances, instanceId)
-    ? settings.providerInstances[instanceId]
-    : undefined;
-  if (
-    instanceConfig === undefined &&
-    settings.removedDefaultProviderInstances?.includes(instanceId) === true
-  ) {
-    return false;
-  }
   const override =
     projectId === null
       ? undefined
       : settings.projectSettingsOverrides[projectId]?.providerInstances?.[instanceId]?.enabled;
   if (override !== undefined) return override;
+  const instanceConfig = Object.hasOwn(settings.providerInstances, instanceId)
+    ? settings.providerInstances[instanceId]
+    : undefined;
   return instanceConfig !== undefined
     ? resolveProviderInstanceEnabled(instanceConfig)
-    : isUnconfiguredDefaultInstanceEnabled(settings, instanceId);
+    : isUnconfiguredDefaultInstanceEnabled(instanceId);
 };
 
 const decodeClaudeSettings = Schema.decodeUnknownOption(ClaudeSettings);

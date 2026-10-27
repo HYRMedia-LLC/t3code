@@ -752,10 +752,7 @@ export function EnvironmentProviderSettings({
     const defaultInstanceId = defaultInstanceIdForDriver(driver);
     const explicitInstance = settings.providerInstances?.[defaultInstanceId];
     const isDirty = explicitInstance !== undefined;
-    const hasDefaultSlot =
-      explicitInstance !== undefined ||
-      (providerSettings.hasDefaultInstance &&
-        !(settings.removedDefaultProviderInstances ?? []).includes(defaultInstanceId));
+    const hasDefaultSlot = providerSettings.hasDefaultInstance || explicitInstance !== undefined;
     if (
       hasDefaultSlot &&
       (driver === "codex" ||
@@ -854,13 +851,9 @@ export function EnvironmentProviderSettings({
   );
 
   const deleteInstance = useStableCallback(
-    async (
-      instanceId: ProviderInstanceId,
-      instance: ProviderInstanceConfig,
-      isDefault: boolean,
-    ) => {
+    async (instanceId: ProviderInstanceId, instance: ProviderInstanceConfig) => {
       const updateResult = await persistProviderInstance({
-        operation: isDefault ? "removeDefault" : "remove",
+        operation: "remove",
         instanceId,
       });
       if (updateResult._tag === "Failure") {
@@ -1217,7 +1210,6 @@ interface ProviderInstanceRowActions {
   readonly deleteInstance: (
     instanceId: ProviderInstanceId,
     instance: ProviderInstanceConfig,
-    isDefault: boolean,
   ) => Promise<void>;
   readonly resetDefaultInstance: (driverKind: ProviderDriverKind) => Promise<void>;
   readonly writeProjectOverride: (
@@ -1397,8 +1389,8 @@ function ProviderInstanceRow({
       }
       onUpdate={(next) => actions.updateInstance(instanceId, instance, next)}
       onDelete={
-        mode === "editor"
-          ? () => actions.deleteInstance(instanceId, instance, isDefault)
+        mode === "editor" && !isDefault
+          ? () => actions.deleteInstance(instanceId, instance)
           : undefined
       }
       headerAction={
