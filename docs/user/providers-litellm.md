@@ -19,7 +19,9 @@ GPT model on the Claude harness.
    login shell. You can also set it in a provider instance's **Environment variables**.
 3. In **Settings > Providers**, choose **Add provider**, pick Claude, Codex, OpenCode, or Pi,
    and turn on **Launch through LiteLLM**. The suggested label is, for example,
-   **LiteLLM Claude**, and that is the name the model picker shows.
+   **LiteLLM Claude**, and that is the name the model picker shows. To route an existing
+   provider instead, such as the built-in Codex or Claude, open it and turn on
+   **Launch through LiteLLM**.
 4. Choose **Sign in**, then **Open browser**, and finish your gateway's SSO sign-in.
 
 You keep one LiteLLM sign-in per user account on the server. All LiteLLM instances share it,
@@ -45,7 +47,10 @@ apply to every model.
 ## Limits
 
 - LiteLLM Codex and LiteLLM Pi use their own config directory, so they do not read your
-  usual Codex or Pi config, skills, or extensions.
+  usual Codex or Pi config, skills, or extensions. A Codex provider you switch to LiteLLM
+  might not resume threads it started before the switch.
+- When the selected text generation model is not on the gateway, commit messages, titles,
+  and branch names use the first gateway model.
 - LiteLLM Codex does not accept `-c` or `--config` in **Launch arguments**, because Codex
   would then skip the gateway.
 - LiteLLM OpenCode does not work with **Server URL**; T3 Code must start the OpenCode server.

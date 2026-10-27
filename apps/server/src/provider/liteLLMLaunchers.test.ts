@@ -47,3 +47,15 @@ it.effect("refuses an external OpenCode server, which lite cannot route", () =>
     assert.match(error, /Server URL/);
   }),
 );
+
+it("counts a Codex alias the harness resolves as a gateway model", () => {
+  const listed = (slug: string, isCustom = false) => ({
+    slug,
+    name: slug,
+    isCustom,
+    capabilities: null,
+  });
+  assert.isTrue(LITELLM_CODEX.servesModel?.(listed("openai.gpt-5.6-luna"), "gpt-5.6-luna"));
+  assert.isFalse(LITELLM_CODEX.servesModel?.(listed("openai.gpt-5.6-luna", true), "gpt-5.6-luna"));
+  assert.isFalse(LITELLM_CODEX.servesModel?.(listed("gpt-5"), "gpt-5.6-luna"));
+});

@@ -3,6 +3,7 @@ import type { LiteLLMLauncherSpec } from "@t3tools/provider-core/server/litellm"
 import type { OpenCodeSettings } from "@t3tools/provider-opencode/settings";
 import type { PiSettings } from "@t3tools/provider-pi/settings";
 import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
+import { codexModelFamily } from "@t3tools/shared/model";
 import * as Effect from "effect/Effect";
 
 import { DEFAULT_CLAUDE_MODEL_CAPABILITIES } from "./ClaudeProvider.ts";
@@ -29,6 +30,7 @@ export const LITELLM_CODEX: LiteLLMLauncherSpec<CodexSettings> = {
             binaryPath: launch.binaryPath,
             homePath: config.homePath || launch.homeDir,
           }),
+  servesModel: (model, requested) => !model.isCustom && codexModelFamily(model.slug) === requested,
 };
 
 export const LITELLM_CLAUDE: LiteLLMLauncherSpec<ClaudeSettings> = {
