@@ -1175,7 +1175,8 @@ export const layerWithOptions = (
               );
         if (hasPendingWork) return false;
         yield* releaseEntry({ ...input, onlyIfIdleGeneration: entry.idleGeneration });
-        return (yield* Ref.get(sessions)).get(key) !== entry;
+        // A kept session can still get a new entry object (markBusy), but never a new runtime.
+        return (yield* Ref.get(sessions)).get(key)?.runtime !== entry.runtime;
       });
 
       // The process keeps the key it started with, so after a renewal the next

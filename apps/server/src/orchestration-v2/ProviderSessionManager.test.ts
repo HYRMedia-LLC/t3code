@@ -1004,6 +1004,8 @@ it.effect("ProviderSessionManagerV2 replaces an idle session after its key is re
 it.effect("ProviderSessionManagerV2 releases only an idle session on releaseIfIdle", () =>
   Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);
+    const probing = yield* Deferred.make<void>();
+    const probeResult = yield* Deferred.make<boolean>();
     yield* Effect.gen(function* () {
       const eventSink = yield* EventSink.EventSinkV2;
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -1025,34 +1027,52 @@ it.effect("ProviderSessionManagerV2 releases only an idle session on releaseIfId
         runtimePolicy,
       });
       const runId = idAllocator.derive.run({ threadId, ordinal: 1 });
-      yield* runtime.startTurn({
-        appThread: (yield* projectionStore.getThreadProjection(threadId)).thread,
-        threadId,
-        runId,
-        runOrdinal: 1,
-        providerTurnOrdinal: 1,
-        attemptId: idAllocator.derive.runAttempt({ runId, attemptOrdinal: 1 }),
-        rootNodeId: idAllocator.derive.rootNode({ runId }),
-        providerThread: makeProviderThread({ idAllocator, threadId, providerSessionId, now }),
-        message: {
-          createdBy: "user",
-          creationSource: "web",
-          messageId: yield* idAllocator.allocate.message({ threadId, ordinal: 1 }),
-          text: "turn",
-          attachments: [],
-        },
-        modelSelection,
-        runtimePolicy,
+      const startTurn = Effect.gen(function* () {
+        return yield* runtime.startTurn({
+          appThread: (yield* projectionStore.getThreadProjection(threadId)).thread,
+          threadId,
+          runId,
+          runOrdinal: 1,
+          providerTurnOrdinal: 1,
+          attemptId: idAllocator.derive.runAttempt({ runId, attemptOrdinal: 1 }),
+          rootNodeId: idAllocator.derive.rootNode({ runId }),
+          providerThread: makeProviderThread({ idAllocator, threadId, providerSessionId, now }),
+          message: {
+            createdBy: "user",
+            creationSource: "web",
+            messageId: yield* idAllocator.allocate.message({ threadId, ordinal: 1 }),
+            text: "turn",
+            attachments: [],
+          },
+          modelSelection,
+          runtimePolicy,
+        });
       });
-
       const release = manager.releaseIfIdle({ providerSessionId, reason: "credentials_renewed" });
-      assert.isFalse(yield* release);
+
+      // A turn starts while the release waits on the background-work probe.
+      const releasing = yield* release.pipe(Effect.forkChild);
+      yield* Deferred.await(probing);
+      yield* startTurn;
+      yield* Deferred.succeed(probeResult, false);
+      assert.isFalse(yield* Fiber.join(releasing));
       assert.isTrue(yield* manager.isLive(providerSessionId));
       assert.equal((yield* Ref.get(state)).closeCount, 0);
 
+      assert.isFalse(yield* release);
       yield* manager.close(providerSessionId);
       assert.isTrue(yield* release);
-    }).pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 60_000 })));
+    }).pipe(
+      Effect.provide(
+        layerTest({
+          state,
+          idleTimeoutMs: 60_000,
+          hasPendingBackgroundWork: Deferred.succeed(probing, undefined).pipe(
+            Effect.andThen(Deferred.await(probeResult)),
+          ),
+        }),
+      ),
+    );
   }),
 );
 
