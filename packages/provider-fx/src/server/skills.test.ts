@@ -63,7 +63,9 @@ describe("discoverFxSkills", () => {
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-fx-skills-home-" });
+      const home = yield* fileSystem
+        .makeTempDirectoryScoped({ prefix: "t3-fx-skills-home-" })
+        .pipe(Effect.flatMap(fileSystem.realPath));
       const workspace = path.join(home, "app");
       const writeSkillFile = (folder: string, contents: string) =>
         fileSystem
@@ -169,6 +171,8 @@ describe("discoverFxSkills", () => {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-fx-skills-home-" });
+      const workspace = path.join(home, "app");
+      yield* fileSystem.makeDirectory(workspace);
       for (const [root, name] of [
         ["dotfiles/fx-skills", "managed"],
         [".claude/skills", "compat"],
@@ -186,7 +190,7 @@ describe("discoverFxSkills", () => {
       );
 
       const skills = yield* discoverFxSkills({
-        cwd: path.join(home, "app"),
+        cwd: workspace,
         environment: { HOME: home },
       });
 
