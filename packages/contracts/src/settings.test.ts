@@ -339,6 +339,18 @@ describe("resolveProjectProviderInstanceEnabled", () => {
     };
     expect(resolveProjectProviderInstanceEnabled(settings, projectId, instanceId)).toBe(false);
   });
+
+  it("keeps a removed default instance off even when a project enables it", () => {
+    const codex = ProviderInstanceId.make("codex");
+    const settings: ServerSettings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      removedDefaultProviderInstances: [codex],
+      projectSettingsOverrides: {
+        [projectId]: { providerInstances: { [codex]: { enabled: true } } },
+      },
+    };
+    expect(resolveProjectProviderInstanceEnabled(settings, projectId, codex)).toBe(false);
+  });
 });
 
 describe("requiredScopesForProjectMutation", () => {

@@ -1324,14 +1324,20 @@ export const resolveProjectProviderInstanceEnabled = (
   projectId: ProjectId | null,
   instanceId: ProviderInstanceId,
 ): boolean => {
+  const instanceConfig = Object.hasOwn(settings.providerInstances, instanceId)
+    ? settings.providerInstances[instanceId]
+    : undefined;
+  if (
+    instanceConfig === undefined &&
+    settings.removedDefaultProviderInstances?.includes(instanceId) === true
+  ) {
+    return false;
+  }
   const override =
     projectId === null
       ? undefined
       : settings.projectSettingsOverrides[projectId]?.providerInstances?.[instanceId]?.enabled;
   if (override !== undefined) return override;
-  const instanceConfig = Object.hasOwn(settings.providerInstances, instanceId)
-    ? settings.providerInstances[instanceId]
-    : undefined;
   return instanceConfig !== undefined
     ? resolveProviderInstanceEnabled(instanceConfig)
     : isUnconfiguredDefaultInstanceEnabled(settings, instanceId);
