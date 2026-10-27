@@ -7,6 +7,7 @@
 import {
   ProviderSetupError,
   type ModelCapabilities,
+  type ModelSelection,
   type ProviderInstanceId,
   type ServerProvider,
   type ServerProviderModel,
@@ -29,6 +30,7 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import type { ProviderDriver, ProviderDriverCreateInput, ProviderInstance } from "./driver.ts";
+import type { ProviderTextGeneration } from "./textGeneration.ts";
 import { ProviderDriverError } from "./errors.ts";
 import { mergeProviderInstanceEnvironment } from "./instanceEnvironment.ts";
 import * as ProviderAuthFlow from "./providerAuthFlow.ts";
@@ -362,6 +364,36 @@ const wrapSnapshot = (
   ),
 });
 
+// Settings default to direct-provider model names that a gateway may not serve.
+const withGatewayModels = (
+  textGeneration: ProviderTextGeneration,
+  snapshot: ManagedServerProvider,
+): ProviderTextGeneration => {
+  const onGatewayModel =
+    <I extends { readonly modelSelection: ModelSelection }, A, E>(
+      run: (input: I) => Effect.Effect<A, E>,
+    ) =>
+    (input: I) =>
+      snapshot.getSnapshot.pipe(
+        Effect.flatMap(({ models }) => {
+          const listed = models.some((model) => model.slug === input.modelSelection.model);
+          const fallback = models[0];
+          return run(
+            listed || fallback === undefined
+              ? input
+              : { ...input, modelSelection: { ...input.modelSelection, model: fallback.slug } },
+          );
+        }),
+      );
+  return {
+    generateCommitMessage: onGatewayModel(textGeneration.generateCommitMessage),
+    generatePrContent: onGatewayModel(textGeneration.generatePrContent),
+    generateBranchName: onGatewayModel(textGeneration.generateBranchName),
+    generateThreadTitle: onGatewayModel(textGeneration.generateThreadTitle),
+    generateReviewGuide: onGatewayModel(textGeneration.generateReviewGuide),
+  };
+};
+
 /**
  * Adds a `litellm` launcher to a driver. The variant writes a per-instance shim
  * that `exec`s `lite <harness>`, points the driver's `binaryPath` at it, and
@@ -461,6 +493,7 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
       ...instance,
       snapshot,
       auth,
+      textGeneration: withGatewayModels(instance.textGeneration, snapshot),
       orchestrationAdapter: { ...instance.orchestrationAdapter, credentialGeneration },
     } satisfies ProviderInstance;
   });

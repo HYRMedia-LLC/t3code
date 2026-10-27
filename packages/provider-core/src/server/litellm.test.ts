@@ -189,6 +189,8 @@ interface FakeConfig {
   readonly homePath: string;
 }
 
+const titleModels: Array<string> = [];
+
 const makeInnerDriver = (created: Array<ProviderDriverCreateInput<FakeConfig>>) =>
   ({
     driverKind: ProviderDriverKind.make("claudeAgent"),
@@ -216,7 +218,17 @@ const makeInnerDriver = (created: Array<ProviderDriverCreateInput<FakeConfig>>) 
             applyUsageLimits: () => Effect.void,
           },
           orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
-          textGeneration: {} as ProviderInstance["textGeneration"],
+          textGeneration: {
+            generateCommitMessage: () => Effect.die("unused"),
+            generatePrContent: () => Effect.die("unused"),
+            generateBranchName: () => Effect.die("unused"),
+            generateReviewGuide: () => Effect.die("unused"),
+            generateThreadTitle: (request) =>
+              Effect.sync(() => {
+                titleModels.push(request.modelSelection.model);
+                return { title: "Title" };
+              }),
+          },
         } satisfies ProviderInstance;
       }),
   }) satisfies ProviderDriver<FakeConfig>;
@@ -328,6 +340,16 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
         ["gpt-5", "my-alias"],
       );
       assert.include(fixture.calls(), "login --pkce");
+
+      titleModels.length = 0;
+      for (const model of ["gpt-6-luna", "my-alias"]) {
+        yield* instance.textGeneration.generateThreadTitle({
+          cwd: fixture.dir,
+          message: "hi",
+          modelSelection: { instanceId, model },
+        });
+      }
+      assert.deepEqual(titleModels, ["gpt-5", "my-alias"]);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
