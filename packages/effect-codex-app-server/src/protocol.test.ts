@@ -332,6 +332,44 @@ it.layer(NodeServices.layer)("effect-codex-app-server protocol", (it) => {
     }),
   );
 
+  it.effect("skips launcher text that precedes the first protocol message", () =>
+    Effect.gen(function* () {
+      const { stdio, input, output } = yield* makeInMemoryStdio();
+      const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({ stdio });
+      const response = yield* transport.request("thread/read", {}).pipe(Effect.forkScoped);
+      yield* Queue.take(output);
+
+      yield* Queue.offer(
+        input,
+        encoder.encode("litellm: routing Codex through proxy at https://gateway.example\n"),
+      );
+      yield* Queue.offer(input, encodeJsonl({ id: 1, result: { ok: true } }));
+
+      assert.deepEqual(yield* Fiber.join(response), { ok: true });
+    }),
+  );
+
+  it.effect("rejects non-JSON text once the peer has spoken the protocol", () =>
+    Effect.gen(function* () {
+      const { stdio, input, output } = yield* makeInMemoryStdio();
+      const termination = yield* Deferred.make<CodexError.CodexAppServerError>();
+      const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+        stdio,
+        onTermination: (error) => Deferred.succeed(termination, error).pipe(Effect.asVoid),
+      });
+      yield* transport.request("thread/read", {}).pipe(Effect.forkScoped);
+      yield* Queue.take(output);
+
+      yield* Queue.offer(input, encodeJsonl({ id: 1, result: {} }));
+      yield* Queue.offer(input, encoder.encode("not a protocol message\n"));
+
+      assert.instanceOf(
+        yield* Deferred.await(termination),
+        CodexError.CodexAppServerProtocolParseError,
+      );
+    }),
+  );
+
   it.effect("keeps processing protocol messages while an approval is pending", () =>
     Effect.gen(function* () {
       const { stdio, input, output } = yield* makeInMemoryStdio();

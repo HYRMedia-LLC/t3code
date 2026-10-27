@@ -644,4 +644,26 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         expect(ghost.unavailableReason).toMatch(/ghostDriver/);
       }).pipe(Effect.provide(layerTest)),
   );
+
+  it.live("shadows a launcher the driver cannot run through instead of launching it directly", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("litellm_codex");
+      const { registry } = yield* makeProviderInstanceRegistry<CodexDriverEnv>({
+        drivers: [CodexDriver],
+        configMap: {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("codex"),
+            launcher: "litellm",
+            enabled: false,
+            config: makeCodexConfig({}),
+          },
+        },
+      });
+
+      expect(yield* registry.listInstances).toHaveLength(0);
+      const [shadow] = yield* registry.listUnavailable;
+      expect(shadow?.instanceId).toBe(instanceId);
+      expect(shadow?.unavailableReason).toMatch(/litellm/);
+    }).pipe(Effect.provide(layerTest)),
+  );
 });

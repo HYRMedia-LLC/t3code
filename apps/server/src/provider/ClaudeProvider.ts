@@ -53,7 +53,7 @@ import {
   resolveClaudeUpdateRequiredModels,
 } from "./ClaudeModelCatalog.ts";
 
-const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
+export const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
 });
 

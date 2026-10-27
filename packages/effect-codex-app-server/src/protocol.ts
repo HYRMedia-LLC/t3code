@@ -366,10 +366,19 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
       return yield* CodexError.CodexAppServerProtocolParseError.fromUnroutableMessage(message);
     });
 
+    // Launchers that exec Codex can print before it starts (`lite codex` prints a
+    // routing line), so text is only a protocol error once Codex has spoken.
+    let peerStarted = false;
     const handleLine = (line: string): Effect.Effect<void, CodexError.CodexAppServerError> => {
       if (line.trim().length === 0) {
         return Effect.void;
       }
+      if (!peerStarted && !line.trimStart().startsWith("{")) {
+        return Effect.logDebug("Skipping text before the first Codex protocol message.", {
+          lineLength: line.length,
+        });
+      }
+      peerStarted = true;
       return logProtocol({
         direction: "incoming",
         stage: "raw",

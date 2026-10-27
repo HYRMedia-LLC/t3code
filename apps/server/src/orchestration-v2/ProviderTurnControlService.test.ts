@@ -278,7 +278,9 @@ it.effect(
           isLive: (providerSessionId) => Effect.succeed(providerSessionId === oldSessionId),
           close: () => Effect.void,
           closeInstance: () => Effect.void,
+          keepsStartupCredentials: () => Effect.succeed(false),
           release: () => Effect.void,
+          releaseIfIdle: () => Effect.succeed(true),
           detach: () => Effect.void,
         }),
       );

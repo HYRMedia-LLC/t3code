@@ -28,6 +28,7 @@ import { Dialog } from "../ui/dialog";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { RadioGroup } from "../ui/radio-group";
+import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { providerClients } from "./providerDriverMeta";
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
@@ -43,6 +44,8 @@ import {
   resolveAcpRegistryWizardNavigation,
   resolveWizardNavigation,
   updateProviderIdentityDraft,
+  LITELLM_LAUNCHER_DRIVERS,
+  setLiteLLMLauncher,
   type ProviderIdentityDraft,
   type WizardNavigation,
 } from "./AddProviderInstanceDialog.logic";
@@ -135,7 +138,10 @@ export function AddProviderInstanceDialog({
     accentColor: "",
     instanceIdOverride: null,
   };
-  const { label, accentColor, instanceIdOverride } = identityByDriver[driver] ?? defaultIdentity;
+  const identityDraft = identityByDriver[driver] ?? defaultIdentity;
+  const { label, accentColor, instanceIdOverride } = identityDraft;
+  const supportsLiteLLM = LITELLM_LAUNCHER_DRIVERS.has(driver);
+  const liteLLM = supportsLiteLLM && identityDraft.liteLLM === true;
   const instanceId =
     instanceIdOverride ??
     deriveAvailableInstanceId(
@@ -306,6 +312,7 @@ export function AddProviderInstanceDialog({
       ...(normalizedAccentColor ? { accentColor: normalizedAccentColor } : {}),
       ...(hasConfig ? { config } : {}),
       ...(isLocalAcp && localEnvironment.length > 0 ? { environment: localEnvironment } : {}),
+      ...(liteLLM ? { launcher: "litellm" as const } : {}),
     };
     const brandedId = ProviderInstanceId.make(instanceId);
     setIsSaving(true);
@@ -325,6 +332,11 @@ export function AddProviderInstanceDialog({
       return;
     }
     onCreated?.(brandedId);
+    if (liteLLM) {
+      setCreatedInstanceId(brandedId);
+      setIsSaving(false);
+      return;
+    }
     if (isAcpRegistry && !isLocalAcp) {
       setCreatedInstanceId(brandedId);
       setIsSaving(false);
@@ -603,6 +615,34 @@ export function AddProviderInstanceDialog({
                     />
                   }
                 />
+                {supportsLiteLLM ? (
+                  <SettingsRow
+                    title={<label htmlFor="add-provider-litellm">Launch through LiteLLM</label>}
+                    description={
+                      <span id="add-provider-litellm-description">
+                        Runs {driverOption.label} with `lite` on {environmentLabel}, so it uses your
+                        LiteLLM gateway's SSO sign-in and models.
+                      </span>
+                    }
+                    control={
+                      <Switch
+                        id="add-provider-litellm"
+                        aria-describedby="add-provider-litellm-description"
+                        checked={liteLLM}
+                        onCheckedChange={(checked) =>
+                          setIdentityByDriver((existing) => ({
+                            ...existing,
+                            [driver]: setLiteLLMLauncher(
+                              identityDraft,
+                              driverOption.label,
+                              checked,
+                            ),
+                          }))
+                        }
+                      />
+                    }
+                  />
+                ) : null}
                 <SettingsRow
                   title="Accent color"
                   description="Optional marker shown in the picker."
@@ -677,7 +717,7 @@ export function AddProviderInstanceDialog({
                 >
                   {isSaving
                     ? "Adding..."
-                    : isAcpRegistry && !isLocalAcp
+                    : (isAcpRegistry && !isLocalAcp) || liteLLM
                       ? "Continue to sign-in"
                       : "Add instance"}
                 </Button>

@@ -13,6 +13,7 @@ export interface ProviderIdentityDraft {
   readonly label: string;
   readonly accentColor: string;
   readonly instanceIdOverride: string | null;
+  readonly liteLLM?: boolean;
 }
 
 const EMPTY_PROVIDER_IDENTITY_DRAFT: ProviderIdentityDraft = {
@@ -20,6 +21,28 @@ const EMPTY_PROVIDER_IDENTITY_DRAFT: ProviderIdentityDraft = {
   accentColor: "",
   instanceIdOverride: null,
 };
+
+/** Drivers whose CLI the server can start through `lite <harness>`. */
+export const LITELLM_LAUNCHER_DRIVERS: ReadonlySet<string> = new Set([
+  "claudeAgent",
+  "codex",
+  "opencode",
+  "pi",
+]);
+
+/** The suggested label follows the launcher until the user types their own. */
+export function setLiteLLMLauncher(
+  draft: ProviderIdentityDraft,
+  driverLabel: string,
+  liteLLM: boolean,
+): ProviderIdentityDraft {
+  const suggested = (on: boolean) => (on ? `LiteLLM ${driverLabel}` : driverLabel);
+  return {
+    ...draft,
+    liteLLM,
+    label: draft.label === suggested(!liteLLM) ? suggested(liteLLM) : draft.label,
+  };
+}
 
 export function getProviderIdentityDraft(
   drafts: Readonly<Record<string, ProviderIdentityDraft>>,

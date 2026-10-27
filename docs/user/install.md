@@ -173,7 +173,8 @@ their original values.
 For provider-specific setup and accounts, see [Codex](./providers-codex.md),
 [Claude](./providers-claude.md), [OpenCode](./providers-opencode.md),
 [Antigravity](./providers-antigravity.md), [Pi](./providers-pi.md), and
-[Muse Code](./providers-muse.md).
+[Muse Code](./providers-muse.md). To run these harnesses through a LiteLLM gateway, see
+[LiteLLM](./providers-litellm.md).
 
 ## Next steps
 

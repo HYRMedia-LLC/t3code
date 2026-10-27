@@ -28,6 +28,7 @@ import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationServic
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { continueRestartedRun } from "./RestartContinuation.ts";
+import { retryAfterGatewayAuthRejection } from "./ProviderAuthRetry.ts";
 
 export class OrchestrationEffectExecutionError extends Schema.TaggedError<OrchestrationEffectExecutionError>()(
   "OrchestrationEffectExecutionError",
@@ -118,6 +119,26 @@ export const layerExecutor: Layer.Layer<
               ),
             );
           }
+          case "provider-auth.retry":
+            return retryAfterGatewayAuthRejection({
+              threadId: effect.threadId,
+              sourceRunId: effect.request.sourceRunId,
+              providerSessionId: effect.request.providerSessionId,
+            }).pipe(
+              Effect.provideService(ThreadManagementService.ThreadManagementService, threads),
+              Effect.provideService(
+                ProviderSessionManager.ProviderSessionManagerV2,
+                providerSessions,
+              ),
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationEffectExecutionError({
+                    effectId: effect.id,
+                    effectType: effect.request.type,
+                    cause,
+                  }),
+              ),
+            );
           case "provider-session.detach":
             return providerSessions
               .detach({

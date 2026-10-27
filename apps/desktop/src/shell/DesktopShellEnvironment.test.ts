@@ -238,6 +238,21 @@ describe("DesktopShellEnvironment", () => {
     }),
   );
 
+  it.effect("hydrates the LiteLLM gateway URL that `lite` reads from the login shell", () =>
+    Effect.gen(function* () {
+      const env: NodeJS.ProcessEnv = { SHELL: "/bin/zsh", PATH: "/usr/bin" };
+
+      yield* runShellEnvironment({
+        env,
+        platform: "darwin",
+        handler: () =>
+          envOutput({ PATH: "/usr/bin", LITELLM_PROXY_URL: "https://gateway.example" }),
+      });
+
+      assert.equal(env.LITELLM_PROXY_URL, "https://gateway.example");
+    }),
+  );
+
   it.effect("keeps mise's PATH record with the login shell PATH", () =>
     Effect.gen(function* () {
       const env: NodeJS.ProcessEnv = {

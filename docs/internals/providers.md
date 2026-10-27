@@ -130,6 +130,24 @@ checkpoints but cannot roll back its conversation. The [checkpoint boundary](./o
 therefore rejects revert before touching files. Native permission and question option IDs must
 also survive normalization; a display label is not necessarily a valid reply.
 
+## Launchers wrap a driver, not a protocol
+
+An instance with `launcher: "litellm"` uses the same driver, but its `binaryPath` points at a
+per-instance shim that `exec`s `lite <harness>`. See [litellm.ts](../../packages/provider-core/src/server/litellm.ts).
+`lite` owns the key, its renewal, the gateway URL, and the harness's gateway config, so T3 stores
+no LiteLLM secret. Two consequences are easy to break:
+
+- Every CLI subcommand a driver spawns now goes through `lite`, which prints a routing line on
+  stdout first and needs a signed-in key. Parsers must tolerate leading non-protocol text, and
+  `--version` probes bypass `lite` in the shim.
+- A harness process keeps the key it started with, and the proxy's keys expire on their own.
+  The adapter's `credentialGeneration` lets the session manager replace an idle process after a
+  renewal, and a turn that fails on a gateway 401 before any side effect is sent again once
+  ([ProviderAuthRetry.ts](../../apps/server/src/orchestration-v2/ProviderAuthRetry.ts)).
+- `lite` only injects gateway settings that the caller did not already set. A driver that passes
+  its own provider config (OpenCode's `OPENCODE_CONFIG_CONTENT`, Codex `-c` after the
+  subcommand) silently routes around the gateway.
+
 ## Attachments and stored history
 
 Attachments live outside the project workspace. The
