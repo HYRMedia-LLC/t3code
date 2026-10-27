@@ -240,6 +240,8 @@ export interface LiteLLMLauncherSpec<Config> {
   readonly homeEnvironment?: (homeDir: string) => Record<string, string>;
   /** Set when T3 owns the model catalog (Claude); other harnesses list what `lite` syncs. */
   readonly gatewayModelCapabilities?: ModelCapabilities | null;
+  /** Aliases the harness resolves to a listed model; exact slugs always count. */
+  readonly servesModel?: (model: ServerProviderModel, requested: string) => boolean;
 }
 
 export type LiteLLMLauncherEnv =
@@ -368,6 +370,7 @@ const wrapSnapshot = (
 const withGatewayModels = (
   textGeneration: ProviderTextGeneration,
   snapshot: ManagedServerProvider,
+  servesModel: LiteLLMLauncherSpec<unknown>["servesModel"],
 ): ProviderTextGeneration => {
   const onGatewayModel =
     <I extends { readonly modelSelection: ModelSelection }, A, E>(
@@ -376,7 +379,10 @@ const withGatewayModels = (
     (input: I) =>
       snapshot.getSnapshot.pipe(
         Effect.flatMap(({ models }) => {
-          const listed = models.some((model) => model.slug === input.modelSelection.model);
+          const requested = input.modelSelection.model;
+          const listed = models.some(
+            (model) => model.slug === requested || servesModel?.(model, requested) === true,
+          );
           const fallback = models[0];
           return run(
             listed || fallback === undefined
@@ -493,7 +499,7 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
       ...instance,
       snapshot,
       auth,
-      textGeneration: withGatewayModels(instance.textGeneration, snapshot),
+      textGeneration: withGatewayModels(instance.textGeneration, snapshot, spec.servesModel),
       orchestrationAdapter: { ...instance.orchestrationAdapter, credentialGeneration },
     } satisfies ProviderInstance;
   });

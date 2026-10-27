@@ -243,6 +243,7 @@ const createLiteLLMInstance = (
       Effect.succeed({ ...config, binaryPath: launch.binaryPath, homePath: launch.homeDir }),
     homeEnvironment: (homeDir) => ({ FAKE_HOME: homeDir }),
     gatewayModelCapabilities: capabilities,
+    servesModel: (model, requested) => model.slug === `my-${requested}`,
   });
   return driver
     .launchers!.litellm!.create({
@@ -342,14 +343,14 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
       assert.include(fixture.calls(), "login --pkce");
 
       titleModels.length = 0;
-      for (const model of ["gpt-6-luna", "my-alias"]) {
+      for (const model of ["gpt-6-luna", "my-alias", "alias"]) {
         yield* instance.textGeneration.generateThreadTitle({
           cwd: fixture.dir,
           message: "hi",
           modelSelection: { instanceId, model },
         });
       }
-      assert.deepEqual(titleModels, ["gpt-5", "my-alias"]);
+      assert.deepEqual(titleModels, ["gpt-5", "my-alias", "alias"]);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
