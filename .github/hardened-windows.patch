@@ -1,0 +1,190 @@
+diff --git a/apps/desktop/src/backend/DesktopBackendConfiguration.test.ts b/apps/desktop/src/backend/DesktopBackendConfiguration.test.ts
+index 7464d8fbe..509e7a9b8 100644
+--- a/apps/desktop/src/backend/DesktopBackendConfiguration.test.ts
++++ b/apps/desktop/src/backend/DesktopBackendConfiguration.test.ts
+@@ -369,7 +369,7 @@ describe("DesktopBackendConfiguration", () => {
+ 
+       assert.equal(config.runningDistro, "Ubuntu");
+       assert.deepEqual(config.args.slice(0, 2), ["-d", "Ubuntu"]);
+-      assert.deepEqual(observedDistros, ["Ubuntu", "Ubuntu", "Ubuntu"]);
++      assert.deepEqual(observedDistros, ["Ubuntu", "Ubuntu"]);
+       assert.isTrue(Option.isNone(config.preflightFailure));
+     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+   );
+@@ -758,11 +758,11 @@ describe("DesktopBackendConfiguration", () => {
+ 
+           assert.equal(config.executablePath, "wsl.exe");
+           assert.equal(config.bootstrap.port, 5050);
+-          assert.equal(config.bootstrap.host, "0.0.0.0");
++          assert.equal(config.bootstrap.host, "127.0.0.1");
+           assert.equal(config.bootstrap.tailscaleServeEnabled, false);
+           assert.notProperty(config.bootstrap, "desktopTelemetryFd");
+           assert.notProperty(config.bootstrap, "resourceMonitorPath");
+-          assert.equal(config.httpBaseUrl.href, "http://172.27.0.99:5050/");
++          assert.equal(config.httpBaseUrl.href, "http://127.0.0.1:5050/");
+           assert.equal(config.env.OPENAI_API_KEY, "openai-key");
+           assert.equal(config.env.ANTHROPIC_API_KEY, "anthropic-key");
+           assert.equal(config.env.T3CODE_OTLP_PROTOCOL, "http/protobuf");
+diff --git a/apps/desktop/src/backend/DesktopBackendConfiguration.ts b/apps/desktop/src/backend/DesktopBackendConfiguration.ts
+index ca69f5d02..12d0c9cb4 100644
+--- a/apps/desktop/src/backend/DesktopBackendConfiguration.ts
++++ b/apps/desktop/src/backend/DesktopBackendConfiguration.ts
+@@ -1,5 +1,3 @@
+-import * as NodeOS from "node:os";
+-
+ import { parsePersistedServerObservabilitySettings } from "@t3tools/shared/serverSettings";
+ import { currentDesktopBootstrapToken } from "@t3tools/shared/desktopBootstrapToken";
+ import * as Clock from "effect/Clock";
+@@ -452,19 +450,6 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
+   } as const;
+ });
+ 
+-// In WSL2 mirrored mode, eth0 matches a host IP; use loopback for the renderer.
+-const isLocalHostIpv4 = (ip: string): boolean => {
+-  const interfaces = NodeOS.networkInterfaces();
+-  for (const list of Object.values(interfaces)) {
+-    if (!list) continue;
+-    for (const entry of list) {
+-      const family = String(entry.family);
+-      if ((family === "IPv4" || family === "4") && entry.address === ip) return true;
+-    }
+-  }
+-  return false;
+-};
+-
+ const buildObservabilityFragment = (observabilitySettings: BackendObservabilitySettings) => ({
+   ...Option.match(observabilitySettings.otlpTracesUrl, {
+     onNone: () => ({}),
+@@ -558,11 +543,8 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
+   | FileSystem.FileSystem
+ > {
+   const environment = yield* DesktopEnvironment.DesktopEnvironment;
+-  const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
+   const fileSystem = yield* FileSystem.FileSystem;
+-
+-  // wslhost loopback forwarding is unreliable on some Windows hosts; advertise the WSL IP instead.
+-  const wslBindHost = "0.0.0.0";
++  const wslBindHost = "127.0.0.1";
+ 
+   const bootstrap = {
+     mode: "desktop" as const,
+@@ -617,14 +599,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
+   const runningDistro = preflight._tag === "Ready" ? preflight.runningDistro : null;
+   const distroForConfig = runningDistro ?? input.distro;
+ 
+-  const distroIp = yield* wslEnvironment.getDistroIp(distroForConfig);
+-  const usesSharedNetworkStack = Option.match(distroIp, {
+-    onNone: () => false,
+-    onSome: (ip) => isLocalHostIpv4(ip),
+-  });
+-  const rendererHost = usesSharedNetworkStack
+-    ? "127.0.0.1"
+-    : Option.getOrElse(distroIp, () => "127.0.0.1");
++  const rendererHost = "127.0.0.1";
+   const httpBaseUrl = new URL(`http://${rendererHost}:${input.port}`);
+ 
+   const distroArgs = distroForConfig ? ["-d", distroForConfig] : [];
+diff --git a/apps/desktop/src/wsl/DesktopWslEnvironment.test.ts b/apps/desktop/src/wsl/DesktopWslEnvironment.test.ts
+index 67549f6b8..b422f1301 100644
+--- a/apps/desktop/src/wsl/DesktopWslEnvironment.test.ts
++++ b/apps/desktop/src/wsl/DesktopWslEnvironment.test.ts
+@@ -132,9 +132,9 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
+       archivePath,
+       archiveSha,
+       runtimeId,
+-      runtimeParent: `${work}/home/.t3/wsl-runtime`,
+-      runtimeRoot: `${work}/home/.t3/wsl-runtime/${runtimeId}`,
+-      serverEntry: `${work}/home/.t3/wsl-runtime/${runtimeId}/t3`,
++      runtimeParent: `${work}/home/.t3-hyr/wsl-runtime`,
++      runtimeRoot: `${work}/home/.t3-hyr/wsl-runtime/${runtimeId}`,
++      serverEntry: `${work}/home/.t3-hyr/wsl-runtime/${runtimeId}/t3`,
+       installScript,
+       install: (archive?: string, sha?: string) => runShell(installScript(archive, sha)),
+     };
+@@ -378,7 +378,7 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
+         "set -eu",
+         "work=$(mktemp -d)",
+         'home="$work/home"',
+-        'runtime_parent="$home/.t3/wsl-runtime"',
++        'runtime_parent="$home/.t3-hyr/wsl-runtime"',
+         'mkdir -p "$runtime_parent"',
+         'make_ready() { mkdir -p "$runtime_parent/$1"; printf ready > "$runtime_parent/$1/.t3code-wsl-runtime-ready"; }',
+         "make_ready sha256-current",
+diff --git a/apps/desktop/src/wsl/DesktopWslEnvironment.ts b/apps/desktop/src/wsl/DesktopWslEnvironment.ts
+index 369397296..7e506acac 100644
+--- a/apps/desktop/src/wsl/DesktopWslEnvironment.ts
++++ b/apps/desktop/src/wsl/DesktopWslEnvironment.ts
+@@ -263,7 +263,7 @@ export const buildWslRuntimeInstallScript = (
+   const safeRuntimeId = sanitizeWslRuntimeId(runtimeId);
+   return [
+     "set -eu",
+-    'runtime_parent="$HOME/.t3/wsl-runtime"',
++    'runtime_parent="$HOME/.t3-hyr/wsl-runtime"',
+     `runtime_root="$runtime_parent/${safeRuntimeId}"`,
+     `ready_marker="$runtime_root/${WSL_RUNTIME_READY_MARKER}"`,
+     "runtime_entry_runs() {",
+@@ -352,7 +352,7 @@ export const buildWslRuntimePruneScript = (runtimeId: string): string => {
+   const safeRuntimeId = sanitizeWslRuntimeId(runtimeId);
+   return [
+     "set -eu",
+-    'runtime_parent="$HOME/.t3/wsl-runtime"',
++    'runtime_parent="$HOME/.t3-hyr/wsl-runtime"',
+     `current_runtime="$runtime_parent/${safeRuntimeId}"`,
+     '[ -d "$runtime_parent" ] || exit 0',
+     // Serialize pruning so backends cannot select and delete different previous caches.
+@@ -403,7 +403,7 @@ export const buildWslRuntimeInvalidateScript = (runtimeId: string): string => {
+   const safeRuntimeId = sanitizeWslRuntimeId(runtimeId);
+   return [
+     "set -eu",
+-    `rm -f "$HOME/.t3/wsl-runtime/${safeRuntimeId}/${WSL_RUNTIME_READY_MARKER}"`,
++    `rm -f "$HOME/.t3-hyr/wsl-runtime/${safeRuntimeId}/${WSL_RUNTIME_READY_MARKER}"`,
+   ].join("\n");
+ };
+ 
+diff --git a/apps/server/src/os-jank.test.ts b/apps/server/src/os-jank.test.ts
+index aaac95bc3..c899c663e 100644
+--- a/apps/server/src/os-jank.test.ts
++++ b/apps/server/src/os-jank.test.ts
+@@ -3,12 +3,13 @@ import { it as effectIt } from "@effect/vitest";
+ import * as HostProcess from "@t3tools/shared/HostProcess";
+ import { CommandAvailability, WindowsShellEnvironment } from "@t3tools/shared/shell";
+ import * as Effect from "effect/Effect";
++import * as Path from "effect/Path";
+ // @effect-diagnostics-next-line nodeBuiltinImport:off -- Observe the existing synchronous shell probe without launching the user's login shell.
+ import * as NodeChildProcess from "node:child_process";
+ import * as NodeOS from "node:os";
+ import { assert, it, vi } from "vite-plus/test";
+ 
+-import { fixPath, hydratePosixHome } from "./os-jank.ts";
++import { fixPath, hydratePosixHome, resolveBaseDir } from "./os-jank.ts";
+ 
+ vi.mock("node:child_process", { spy: true });
+ 
+@@ -151,3 +152,14 @@ effectIt.effect("replaces a Path-spelled Windows PATH instead of adding a second
+     assert.deepEqual(env, { PATH: "C:\\Tools;C:\\Windows" });
+   }),
+ );
++
++effectIt.effect("uses a separate Hardened home and preserves an explicit home", () =>
++  Effect.gen(function* () {
++    const path = yield* Path.Path;
++    assert.equal(yield* resolveBaseDir(undefined), path.join("/home/hardened", ".t3-hyr"));
++    assert.equal(yield* resolveBaseDir("/custom/t3-home"), path.resolve("/custom/t3-home"));
++  }).pipe(
++    Effect.provideService(HostProcess.HomeDirectory, "/home/hardened"),
++    Effect.provide(NodeServices.layer),
++  ),
++);
+diff --git a/apps/server/src/os-jank.ts b/apps/server/src/os-jank.ts
+index dece291aa..fc6ff9425 100644
+--- a/apps/server/src/os-jank.ts
++++ b/apps/server/src/os-jank.ts
+@@ -123,7 +123,7 @@ export const expandHomePath = Effect.fn(function* (input: string) {
+ export const resolveBaseDir = Effect.fn(function* (raw: string | undefined) {
+   const { join, resolve } = yield* Path.Path;
+   if (!raw || raw.trim().length === 0) {
+-    return join(yield* HostProcess.HomeDirectory, ".t3");
++    return join(yield* HostProcess.HomeDirectory, ".t3-hyr");
+   }
+   return resolve(yield* expandHomePath(raw.trim()));
+ });

@@ -20,20 +20,22 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: 2bd26f2943ea22f49c84760fe496d6cde1ba580b
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+      - name: Check out the release source
+        run: |
+          git init .
+          git remote add origin https://github.com/hyrmedia-hector/t3code.git
+          git fetch --no-tags --depth=1 origin 2bd26f2943ea22f49c84760fe496d6cde1ba580b
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
 
       - name: Apply the published Hardened patch
         run: |
           curl -fsSL --retry 3 https://github.com/hyrmedia-hector/t3code/releases/download/v0.1.5/hardened.patch -o hardened.patch
           echo '0aea12f537978182387292de97c523444a0334e5ef606ab9c2e080dd6c87d7bb  hardened.patch' | sha256sum -c -
           git apply hardened.patch
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git show "$GITHUB_SHA:.github/hardened-windows.patch" > windows-hardened.patch
+          git apply windows-hardened.patch
 
       - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
         with:
@@ -42,12 +44,18 @@ jobs:
           run-install: false
 
       - name: Install build dependencies
-        run: vp install --filter=t3... --filter=@t3tools/scripts...
+        run: vp install --filter=t3... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
 
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           toolchain: stable
           targets: x86_64-unknown-linux-gnu
+
+      - name: Test Hardened runtime isolation
+        run: >-
+          vp test run apps/server/src/os-jank.test.ts
+          apps/desktop/src/backend/DesktopBackendConfiguration.test.ts
+          apps/desktop/src/wsl/DesktopWslEnvironment.test.ts
 
       - name: Build server and client
         run: |
@@ -80,20 +88,22 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: 2bd26f2943ea22f49c84760fe496d6cde1ba580b
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+      - name: Check out the release source
+        run: |
+          git init .
+          git remote add origin https://github.com/hyrmedia-hector/t3code.git
+          git fetch --no-tags --depth=1 origin 2bd26f2943ea22f49c84760fe496d6cde1ba580b
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
 
       - name: Apply the published Hardened patch
         run: |
           curl -fsSL --retry 3 https://github.com/hyrmedia-hector/t3code/releases/download/v0.1.5/hardened.patch -o hardened.patch
           echo '0aea12f537978182387292de97c523444a0334e5ef606ab9c2e080dd6c87d7bb  hardened.patch' | sha256sum -c -
           git apply hardened.patch
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git show "$GITHUB_SHA:.github/hardened-windows.patch" > windows-hardened.patch
+          git apply windows-hardened.patch
 
       - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
         with:
@@ -113,6 +123,12 @@ jobs:
         with:
           name: hardened-wsl-linux-x64
           path: wsl-runtime
+
+      - name: Test Hardened runtime isolation
+        run: >-
+          vp test run apps/server/src/os-jank.test.ts
+          apps/desktop/src/backend/DesktopBackendConfiguration.test.ts
+          apps/desktop/src/wsl/DesktopWslEnvironment.test.ts
 
       - name: Build server and client
         run: |
