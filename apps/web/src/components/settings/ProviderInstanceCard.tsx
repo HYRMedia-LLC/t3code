@@ -63,6 +63,7 @@ import { ProviderModelsSection } from "./ProviderModelsSection";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
+import { LITELLM_LAUNCHER_DRIVERS } from "./AddProviderInstanceDialog.logic";
 import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
 import { AcpSessionManagementSection } from "./AcpSessionManagementSection";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
@@ -728,6 +729,11 @@ export function ProviderInstanceCard({
     onUpdate({ ...instance, enabled: value });
   };
 
+  const updateLiteLLMLauncher = (liteLLM: boolean) => {
+    const { launcher: _omit, ...rest } = instance;
+    onUpdate(liteLLM ? { ...rest, launcher: "litellm" } : rest);
+  };
+
   const updateAccentColor = (value: string) => {
     const normalized = normalizeProviderAccentColor(value);
     const { accentColor: _omit, ...rest } = instance;
@@ -1167,6 +1173,24 @@ export function ProviderInstanceCard({
             </div>
           }
         />
+        {LITELLM_LAUNCHER_DRIVERS.has(instance.driver) ? (
+          <SettingsRow
+            title={
+              <label htmlFor={`provider-instance-${instanceId}-litellm`}>
+                Launch through LiteLLM
+              </label>
+            }
+            description="Uses your LiteLLM gateway's SSO sign-in and models."
+            control={
+              <Switch
+                id={`provider-instance-${instanceId}-litellm`}
+                checked={instance.launcher === "litellm"}
+                disabled={readOnly}
+                onCheckedChange={updateLiteLLMLauncher}
+              />
+            }
+          />
+        ) : null}
       </SettingsSection>
 
       {setup || environmentFields.length > 0 ? (
