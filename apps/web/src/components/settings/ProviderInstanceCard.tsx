@@ -729,6 +729,8 @@ export function ProviderInstanceCard({
     onUpdate({ ...instance, enabled: value });
   };
 
+  const managedCodex =
+    instance.driver === "codex" && readCodexSetupMode(instance.config) === "managed";
   const updateLiteLLMLauncher = (liteLLM: boolean) => {
     const { launcher: _omit, ...rest } = instance;
     onUpdate(liteLLM ? { ...rest, launcher: "litellm" } : rest);
@@ -1180,12 +1182,16 @@ export function ProviderInstanceCard({
                 Launch through LiteLLM
               </label>
             }
-            description="Uses your LiteLLM gateway's SSO sign-in and models."
+            description={
+              managedCodex
+                ? "Not available for a T3-managed Codex. Switch its setup to your own Codex first."
+                : "Uses your LiteLLM gateway's SSO sign-in and models."
+            }
             control={
               <Switch
                 id={`provider-instance-${instanceId}-litellm`}
                 checked={instance.launcher === "litellm"}
-                disabled={readOnly}
+                disabled={readOnly || (managedCodex && instance.launcher !== "litellm")}
                 onCheckedChange={updateLiteLLMLauncher}
               />
             }
@@ -1217,7 +1223,7 @@ export function ProviderInstanceCard({
         </SettingsSection>
       ) : null}
 
-      {instance.driver === "codex" && readCodexSetupMode(instance.config) === "managed" ? (
+      {managedCodex ? (
         <div
           inert={readOnly}
           aria-disabled={readOnly || undefined}
