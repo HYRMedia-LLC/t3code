@@ -1,81 +1,157 @@
-# On-demand Windows test lane. Manual only: nothing in the suite passes on
-# Windows yet, so this exists to give contributors (and agents) a cloud Windows
-# box to iterate against. Once the suite is green here, fold it into ci.yml.
-#
-#   gh workflow run windows-tests.yml --ref <branch> -f package=packages/shared
-#   gh workflow run windows-tests.yml --ref <branch> -f package=apps/server \
-#     -f files="src/process/externalLauncher.test.ts src/cli/theme.test.ts"
-#   gh run watch && gh run view --log-failed
-name: Windows Tests
+name: Hardened Windows Release
 
 on:
   workflow_dispatch:
-    inputs:
-      package:
-        description: "Workspace directory to test, e.g. apps/server or packages/shared. Empty runs every package except apps/server."
-        type: string
-        default: ""
-      files:
-        description: "Space-separated test files relative to the package directory. Empty runs the package's whole suite. Requires package."
-        type: string
-        default: ""
 
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
+env:
+  T3CODE_TELEMETRY_ENABLED: "false"
+  T3CODE_DESKTOP_UPDATE_REPOSITORY: hyrmedia-hector/t3code
+
 jobs:
-  test:
-    name: Test (${{ inputs.package || 'all non-server' }})
-    runs-on: blacksmith-8vcpu-windows-2025
-    timeout-minutes: 45
+  wsl:
+    name: Build WSL runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
+          ref: 2bd26f2943ea22f49c84760fe496d6cde1ba580b
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
           sparse-checkout-cone-mode: false
 
-      # setup-vp's own cache restores a Linux-shaped store on Windows, which is
-      # slower than no cache (see #7975). Cache pnpm's Windows store directly.
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+      - name: Apply the published Hardened patch
+        run: |
+          curl -fsSL --retry 3 https://github.com/hyrmedia-hector/t3code/releases/download/v0.1.5/hardened.patch -o hardened.patch
+          echo '0aea12f537978182387292de97c523444a0334e5ef606ab9c2e080dd6c87d7bb  hardened.patch' | sha256sum -c -
+          git apply hardened.patch
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
         with:
           node-version-file: package.json
           cache: false
           run-install: false
 
-      - name: Resolve package cache path
-        id: package_cache_path
-        shell: pwsh
-        run: '"path=$(vp pm cache dir)" >> $env:GITHUB_OUTPUT'
+      - name: Install build dependencies
+        run: vp install --filter=t3... --filter=@t3tools/scripts...
 
-      - name: Cache packages
-        uses: actions/cache@v6
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
-          path: ${{ steps.package_cache_path.outputs.path }}
-          key: windows-tests-packages-v1-${{ hashFiles('pnpm-lock.yaml') }}
+          toolchain: stable
+          targets: x86_64-unknown-linux-gnu
 
-      - name: Install
-        run: vp install
-
-      - name: Ensure Electron runtime is installed
-        if: inputs.package == '' || inputs.package == 'apps/desktop'
-        run: vp run --filter "@t3tools/desktop" ensure:electron
-
-      # `vp run ... test -- <files>` does not forward positional args to vitest,
-      # so file-scoped runs call `vp test run` inside the package instead.
-      - name: Test
-        shell: pwsh
+      - name: Build server and client
         run: |
-          $package = '${{ inputs.package }}'
-          $files = '${{ inputs.files }}'
-          if ($package -eq '') {
-            vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' test
-          } elseif ($files -eq '') {
-            vp run --filter "./$package" test
-          } else {
-            Set-Location $package
-            vp test run $files.Split(' ')
-          }
+          node scripts/update-release-package-versions.ts 0.1.5
+          vp run --filter t3 build
+          node scripts/apply-web-brand-assets.ts production apps/server/dist/client
+          node apps/server/scripts/cli.ts build-exe --verbose
+
+      - name: Build resource monitor
+        run: |
+          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target x86_64-unknown-linux-gnu
+          mkdir -p "$RUNNER_TEMP/cli-resource-monitor/linux-x64"
+          cp native/resource-monitor/target/x86_64-unknown-linux-gnu/release/t3-resource-monitor "$RUNNER_TEMP/cli-resource-monitor/linux-x64/"
+
+      - name: Build and test WSL runtime archive
+        run: |
+          node scripts/build-cli-archive.ts --platform linux --arch x64 --version 0.1.5 --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" --output-dir release-cli
+          node scripts/smoke-cli-archive.ts --archive release-cli/t3-0.1.5-linux-x64.tar.gz --expect-version 0.1.5
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: hardened-wsl-linux-x64
+          path: release-cli/t3-0.1.5-linux-x64.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    name: Build Windows x64 installer
+    needs: wsl
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 2bd26f2943ea22f49c84760fe496d6cde1ba580b
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Apply the published Hardened patch
+        run: |
+          curl -fsSL --retry 3 https://github.com/hyrmedia-hector/t3code/releases/download/v0.1.5/hardened.patch -o hardened.patch
+          echo '0aea12f537978182387292de97c523444a0334e5ef606ab9c2e080dd6c87d7bb  hardened.patch' | sha256sum -c -
+          git apply hardened.patch
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+
+      - name: Install build dependencies
+        run: vp install --filter=t3... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: hardened-wsl-linux-x64
+          path: wsl-runtime
+
+      - name: Build server and client
+        run: |
+          node scripts/update-release-package-versions.ts 0.1.5
+          vp run build:desktop
+          node apps/server/scripts/cli.ts build-exe --verbose
+
+      - name: Build resource monitor
+        run: |
+          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target x86_64-pc-windows-msvc
+          mkdir -p "$RUNNER_TEMP/cli-resource-monitor/win32-x64"
+          cp native/resource-monitor/target/x86_64-pc-windows-msvc/release/t3-resource-monitor.exe "$RUNNER_TEMP/cli-resource-monitor/win32-x64/"
+
+      - name: Build and test Windows CLI archive
+        run: |
+          node scripts/build-cli-archive.ts --platform win --arch x64 --version 0.1.5 --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" --output-dir release-cli
+          node scripts/smoke-cli-archive.ts --archive release-cli/t3-0.1.5-win32-x64.zip --expect-version 0.1.5
+
+      - name: Build and verify Windows installer
+        env:
+          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "true"
+        run: >-
+          vp run dist:desktop:artifact --platform win --target nsis --arch x64
+          --build-version 0.1.5 --skip-build --verbose
+          --wsl-runtime "$GITHUB_WORKSPACE/wsl-runtime/t3-0.1.5-linux-x64.tar.gz"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: hardened-windows-x64
+          path: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/latest.yml
+          if-no-files-found: error
+          retention-days: 7
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: hardened-cli-win32-x64
+          path: release-cli/t3-0.1.5-win32-x64.zip
+          if-no-files-found: error
+          retention-days: 7
