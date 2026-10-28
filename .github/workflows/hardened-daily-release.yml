@@ -26,8 +26,9 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, t3-hardened]
     timeout-minutes: 90
     steps:
-      # GH_TOKEN comes from the runner's local .env, not GITHUB_TOKEN: GITHUB_TOKEN
-      # cannot push upstream commits that change workflow files.
+      # gh uses the runner user's keychain login, not GITHUB_TOKEN: GITHUB_TOKEN cannot
+      # push upstream commits that change workflow files. Signing and asc also need that
+      # keychain, so the runner LaunchAgent must not set SessionCreate.
       - name: Sync main with upstream
         run: |
           gh api -X POST "repos/$GITHUB_REPOSITORY/merge-upstream" -f branch=main --jq '.message' || {
