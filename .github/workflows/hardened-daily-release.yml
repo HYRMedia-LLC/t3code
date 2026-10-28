@@ -26,12 +26,14 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, t3-hardened]
     timeout-minutes: 90
     steps:
-      # The runner's keyring gh login is used, not GITHUB_TOKEN: GITHUB_TOKEN cannot
-      # push upstream commits that change workflow files.
+      # GH_TOKEN comes from the runner's local .env, not GITHUB_TOKEN: GITHUB_TOKEN
+      # cannot push upstream commits that change workflow files.
       - name: Sync main with upstream
         run: |
-          gh auth status
-          gh api -X POST "repos/$GITHUB_REPOSITORY/merge-upstream" -f branch=main --jq '.message'
+          gh api -X POST "repos/$GITHUB_REPOSITORY/merge-upstream" -f branch=main --jq '.message' || {
+            echo "::error::Upstream does not merge cleanly into main. Merge pingdotgg/t3code main by hand, push, then rerun."
+            exit 1
+          }
 
       - name: Checkout
         uses: actions/checkout@v6
