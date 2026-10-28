@@ -96,6 +96,7 @@ const LOGIN_SHELL_ENV_NAMES = [
   "NODE_EXTRA_CA_CERTS",
   "LITELLM_PROXY_URL",
   "T3CODE_TELEMETRY_ENABLED",
+  "T3CODE_GITHUB_APP_CLIENT_ID",
   "__MISE_DIFF",
 ] as const;
 const WINDOWS_PROFILE_ENV_NAMES = ["PATH", "FNM_DIR", "FNM_MULTISHELL_PATH"] as const;
@@ -454,6 +455,7 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
       // stays in `lite`'s own store, so no LiteLLM secret comes from the shell.
       "LITELLM_PROXY_URL",
       "T3CODE_TELEMETRY_ENABLED",
+      "T3CODE_GITHUB_APP_CLIENT_ID",
     ] as const) {
       if (!config.env[name] && shellEnvironment[name]) {
         config.env[name] = shellEnvironment[name];
