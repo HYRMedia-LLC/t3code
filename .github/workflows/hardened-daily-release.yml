@@ -1,0 +1,69 @@
+name: Hardened Daily Release
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Release even when main has not changed since the last release"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: hardened-daily-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Sync upstream and release
+    if: github.repository == 'hyrmedia-hector/t3code'
+    # The Mac with the HYRMedia Developer ID certificate and the asc notarization login.
+    runs-on: [self-hosted, macOS, ARM64, t3-hardened]
+    timeout-minutes: 90
+    steps:
+      # The runner's keyring gh login is used, not GITHUB_TOKEN: GITHUB_TOKEN cannot
+      # push upstream commits that change workflow files.
+      - name: Sync main with upstream
+        run: |
+          gh auth status
+          gh api -X POST "repos/$GITHUB_REPOSITORY/merge-upstream" -f branch=main --jq '.message'
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+          clean: true
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - id: changes
+        name: Check for changes since the last release
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          last="$(gh release list -R "$GITHUB_REPOSITORY" --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // ""')"
+          if [[ "$FORCE" != "true" && -n "$last" ]] && git diff --quiet "$last" HEAD -- . ':!.github'; then
+            echo "No source changes since $last."
+            echo "release=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "release=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.changes.outputs.release == 'true'
+        run: vp install
+
+      - name: Build, notarize, and publish
+        if: steps.changes.outputs.release == 'true'
+        env:
+          T3_HARDENED_OUT: ${{ runner.temp }}/hardened
+        run: .github/hardened/release.sh

@@ -1,0 +1,239 @@
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index f87fa2045..52f5fda8b 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -41,5 +41,5 @@
+     "tailwindcss": "^4.0.0",
+     "vite-plus": "catalog:"
+   },
+-  "productName": "T3 Code (Beta)"
++  "productName": "T3 Code (Hardened)"
+ }
+diff --git a/apps/desktop/src/app/DesktopEnvironment.ts b/apps/desktop/src/app/DesktopEnvironment.ts
+index 1066198b8..4f90fddda 100644
+--- a/apps/desktop/src/app/DesktopEnvironment.ts
++++ b/apps/desktop/src/app/DesktopEnvironment.ts
+@@ -96,7 +96,7 @@ function resolveDesktopAppStageLabel(input: {
+     return "Dev";
+   }
+ 
+-  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Beta";
++  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Hardened";
+ }
+ 
+ export function resolveDesktopAppBranding(input: {
+diff --git a/apps/desktop/src/app/DesktopStatePaths.ts b/apps/desktop/src/app/DesktopStatePaths.ts
+index 006dd9709..10cd30092 100644
+--- a/apps/desktop/src/app/DesktopStatePaths.ts
++++ b/apps/desktop/src/app/DesktopStatePaths.ts
+@@ -16,7 +16,7 @@ export function resolveDesktopBaseDir(input: {
+   readonly t3Home: Option.Option<string>;
+ }): string {
+   return Option.getOrElse(normalizeConfiguredBaseDir(input.t3Home), () =>
+-    input.joinPath(input.homeDirectory, ".t3"),
++    input.joinPath(input.homeDirectory, ".t3-hyr"),
+   );
+ }
+ 
+diff --git a/apps/desktop/src/app/DesktopUserData.ts b/apps/desktop/src/app/DesktopUserData.ts
+index 99a082b43..41c5c8674 100644
+--- a/apps/desktop/src/app/DesktopUserData.ts
++++ b/apps/desktop/src/app/DesktopUserData.ts
+@@ -41,7 +41,7 @@ export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPa
+     const path = yield* Path.Path;
+     const names = input.isDevelopment
+       ? { current: "t3code-dev", legacy: "T3 Code (Dev)" }
+-      : { current: "t3code-v2", legacy: "T3 Code (Alpha)" };
++      : { current: "t3code-hardened", legacy: "T3 Code (Hardened Legacy)" };
+     const destinationPath = path.join(input.appDataDirectory, names.current);
+     const legacyPath = path.join(input.appDataDirectory, names.legacy);
+     const inspect = (resourcePath: string) =>
+diff --git a/apps/desktop/src/backend/DesktopServerExposure.ts b/apps/desktop/src/backend/DesktopServerExposure.ts
+index 8d178c605..1041c822e 100644
+--- a/apps/desktop/src/backend/DesktopServerExposure.ts
++++ b/apps/desktop/src/backend/DesktopServerExposure.ts
+@@ -114,9 +114,9 @@ const resolveDesktopServerExposure = (input: {
+   const localHttpUrl = `http://${DESKTOP_LOOPBACK_HOST}:${input.port}`;
+   const localWsUrl = `ws://${DESKTOP_LOOPBACK_HOST}:${input.port}`;
+ 
+-  if (input.mode === "local-only") {
++  if (input.mode === "local-only" || input.mode === "network-accessible") {
+     return {
+-      mode: input.mode,
++      mode: "local-only",
+       bindHost: DESKTOP_LOOPBACK_HOST,
+       localHttpUrl,
+       localWsUrl,
+diff --git a/apps/desktop/src/settings/DesktopAppSettings.ts b/apps/desktop/src/settings/DesktopAppSettings.ts
+index 433e8127a..09dcc4e3c 100644
+--- a/apps/desktop/src/settings/DesktopAppSettings.ts
++++ b/apps/desktop/src/settings/DesktopAppSettings.ts
+@@ -219,9 +219,8 @@ function normalizeDesktopSettingsDocument(
+     linuxPasswordStore: normalizeLinuxPasswordStorePreference(parsed.linuxPasswordStore),
+     mainWindowBounds,
+     mainWindowMaximized: mainWindowBounds !== null && parsed.mainWindowMaximized === true,
+-    serverExposureMode:
+-      parsed.serverExposureMode === "network-accessible" ? "network-accessible" : "local-only",
+-    tailscaleServeEnabled: parsed.tailscaleServeEnabled === true,
++    serverExposureMode: "local-only",
++    tailscaleServeEnabled: false,
+     tailscaleServePort: normalizeTailscaleServePort(parsed.tailscaleServePort),
+     updateChannel: updateChannelConfiguredByUser
+       ? Option.getOrElse(parsedUpdateChannel, () => defaultSettings.updateChannel)
+diff --git a/apps/server/src/cloud/CloudLink.ts b/apps/server/src/cloud/CloudLink.ts
+index 8986a5b19..7ae2308da 100644
+--- a/apps/server/src/cloud/CloudLink.ts
++++ b/apps/server/src/cloud/CloudLink.ts
+@@ -718,6 +718,7 @@ const make = Effect.gen(function* () {
+   const startManagedTunnelIfOriginConfirmed = Effect.fn(
+     "environment.cloud.startManagedCloudTunnelIfOriginConfirmed",
+   )(function* (localOrigin: string, options?: { readonly requireConfirmedOrigin?: boolean }) {
++    if (localOrigin.length >= 0) return false;
+     const requireConfirmedOrigin = options?.requireConfirmedOrigin ?? true;
+     const parsedOrigin = yield* Effect.try({
+       try: () => parseManagedEndpointLocalOrigin(localOrigin),
+diff --git a/apps/server/src/cloud/publicConfig.ts b/apps/server/src/cloud/publicConfig.ts
+index 15594f116..1e64356ff 100644
+--- a/apps/server/src/cloud/publicConfig.ts
++++ b/apps/server/src/cloud/publicConfig.ts
+@@ -100,9 +100,9 @@ export function resolveRelayClientTracingConfig(
+     : null;
+ }
+ 
+-export function makeRelayUrlConfig(fallback = buildTimeRelayUrl) {
+-  const runtimeConfig = Config.NonEmptyString("T3CODE_RELAY_URL");
+-  return (fallback ? runtimeConfig.pipe(Config.withDefault(fallback)) : runtimeConfig).pipe(
++export function makeRelayUrlConfig(_fallback = buildTimeRelayUrl) {
++  // Enterprise fork: T3 Connect is unavailable, so no relay URL ever resolves.
++  return Config.NonEmptyString("T3CODE_FORK_RELAY_DISABLED").pipe(
+     Config.mapEffect(validateRelayUrl),
+   );
+ }
+@@ -204,7 +204,7 @@ export function makeCloudCliOAuthConfig({
+ 
+ export const cloudCliOAuthConfig = makeCloudCliOAuthConfig();
+ 
+-export const hasCloudPublicConfig = Boolean(
++export const hasCloudPublicConfig = false && Boolean(
+   (normalizeSecureRelayUrl(process.env.T3CODE_RELAY_URL ?? "") ?? buildTimeRelayUrl) &&
+   (process.env.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() || buildTimeClerkPublishableKey) &&
+   (process.env.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID?.trim() || buildTimeClerkCliOAuthClientId),
+diff --git a/apps/server/src/guest/GuestShareService.ts b/apps/server/src/guest/GuestShareService.ts
+index 1f65217e4..d1b6d6f78 100644
+--- a/apps/server/src/guest/GuestShareService.ts
++++ b/apps/server/src/guest/GuestShareService.ts
+@@ -266,7 +266,7 @@ const make = Effect.gen(function* () {
+   );
+   // A beta: while it is off, no link opens and every guest request is refused.
+   const sharingEnabled = serverSettings.getSettings.pipe(
+-    Effect.map((settings) => settings.guestSharingEnabled),
++    Effect.map(() => false),
+     Effect.orElseSucceed(() => false),
+   );
+ 
+diff --git a/apps/server/src/provider/ModelManifest.ts b/apps/server/src/provider/ModelManifest.ts
+index 3cebfb22c..104ed35fb 100644
+--- a/apps/server/src/provider/ModelManifest.ts
++++ b/apps/server/src/provider/ModelManifest.ts
+@@ -256,7 +256,7 @@ export const make = Effect.gen(function* () {
+   });
+ });
+ 
+-export const layer = Layer.effect(ModelManifest, make);
++export const layer = layerBundledOnly;
+ 
+ export const layerTest = Layer.suspend(() =>
+   layerModelCatalog.pipe(Layer.provideMerge(layerBundledOnly)),
+diff --git a/apps/server/src/server.ts b/apps/server/src/server.ts
+index f461a9918..900359a10 100644
+--- a/apps/server/src/server.ts
++++ b/apps/server/src/server.ts
+@@ -795,7 +795,7 @@ const layerMakeServer = Layer.unwrap(
+           );
+       }),
+     );
+-    const layerTailscaleServe = config.tailscaleServeEnabled
++    const layerTailscaleServe = false as boolean
+       ? Layer.effectDiscard(
+           Effect.acquireRelease(
+             Effect.gen(function* () {
+diff --git a/apps/server/src/telemetry/AnalyticsService.ts b/apps/server/src/telemetry/AnalyticsService.ts
+index 1e1873568..77ad26015 100644
+--- a/apps/server/src/telemetry/AnalyticsService.ts
++++ b/apps/server/src/telemetry/AnalyticsService.ts
+@@ -58,12 +58,12 @@ function retryDelayMs(failures: number, random: number): number {
+ 
+ const TelemetryEnvConfig = Config.all({
+   posthogKey: Config.String("T3CODE_POSTHOG_KEY").pipe(
+-    Config.withDefault("phc_XOWci4oZP4VvLiEyrFqkFjP4CZn55mjYYBMREK5Wd6m"),
++    Config.withDefault(""),
+   ),
+   posthogHost: Config.String("T3CODE_POSTHOG_HOST").pipe(
+-    Config.withDefault("https://ingest.t3.codes"),
++    Config.withDefault(""),
+   ),
+-  enabled: Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(Config.withDefault(true)),
++  enabled: Config.succeed(false),
+   flushBatchSize: Config.Number("T3CODE_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
+   maxBufferedEvents: Config.Number("T3CODE_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
+     Config.withDefault(1_000),
+diff --git a/apps/web/src/branding.ts b/apps/web/src/branding.ts
+index 7d14e2cea..b77e71882 100644
+--- a/apps/web/src/branding.ts
++++ b/apps/web/src/branding.ts
+@@ -20,7 +20,7 @@ export const APP_BASE_NAME = injectedDesktopAppBranding?.baseName ?? "T3 Code";
+ export const APP_STAGE_LABEL =
+   injectedDesktopAppBranding?.stageLabel ??
+   HOSTED_APP_CHANNEL_LABEL ??
+-  (import.meta.env.DEV ? "Dev" : "Beta");
++  (import.meta.env.DEV ? "Dev" : "Hardened");
+ export const APP_DISPLAY_NAME =
+   injectedDesktopAppBranding?.displayName ??
+   formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel: APP_STAGE_LABEL });
+diff --git a/apps/web/src/cloud/publicConfig.ts b/apps/web/src/cloud/publicConfig.ts
+index 9f1238b85..9d20f0355 100644
+--- a/apps/web/src/cloud/publicConfig.ts
++++ b/apps/web/src/cloud/publicConfig.ts
+@@ -80,6 +80,7 @@ export function resolveRelayTracingConfig() {
+ }
+ 
+ export function hasCloudPublicConfig(): boolean {
++  if (import.meta.env.MODE !== "test") return false;
+   const config = resolveCloudPublicConfig();
+   if (!config.clerkPublishableKey || !config.clerkJwtTemplate || !config.relayUrl) {
+     return false;
+diff --git a/packages/contracts/src/ipc.ts b/packages/contracts/src/ipc.ts
+index 34d416208..bfd7d8db5 100644
+--- a/packages/contracts/src/ipc.ts
++++ b/packages/contracts/src/ipc.ts
+@@ -78,7 +78,7 @@ export type DesktopUpdateStatus =
+ export type DesktopRuntimeArch = "arm64" | "x64" | "other";
+ export type DesktopTheme = "light" | "dark" | "system";
+ export type DesktopUpdateChannel = "latest" | "nightly";
+-export type DesktopAppStageLabel = "Alpha" | "Beta" | "Dev" | "Nightly";
++export type DesktopAppStageLabel = "Alpha" | "Beta" | "Dev" | "Hardened" | "Nightly";
+ 
+ export const DesktopUpdateStatusSchema = Schema.Literals([
+   "disabled",
+@@ -93,7 +93,7 @@ export const DesktopUpdateStatusSchema = Schema.Literals([
+ export const DesktopRuntimeArchSchema = Schema.Literals(["arm64", "x64", "other"]);
+ export const DesktopThemeSchema = Schema.Literals(["light", "dark", "system"]);
+ export const DesktopUpdateChannelSchema = Schema.Literals(["latest", "nightly"]);
+-export const DesktopAppStageLabelSchema = Schema.Literals(["Alpha", "Beta", "Dev", "Nightly"]);
++export const DesktopAppStageLabelSchema = Schema.Literals(["Alpha", "Beta", "Dev", "Hardened", "Nightly"]);
+ 
+ export interface DesktopAppBranding {
+   baseName: string;
+diff --git a/scripts/build-desktop-artifact.ts b/scripts/build-desktop-artifact.ts
+index ac2ed7826..59810268f 100644
+--- a/scripts/build-desktop-artifact.ts
++++ b/scripts/build-desktop-artifact.ts
+@@ -62,7 +62,7 @@ import { Command, Flag } from "effect/cli";
+ import { ChildProcess, ChildProcessSpawner } from "effect/process";
+ 
+ const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
+-const DESKTOP_APP_ID = "com.t3tools.t3code";
++const DESKTOP_APP_ID = "com.hyrmedia.t3code.litellm";
+ const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
+ 
+ const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
