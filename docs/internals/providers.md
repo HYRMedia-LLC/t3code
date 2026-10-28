@@ -142,8 +142,9 @@ no LiteLLM secret. Two consequences are easy to break:
   `--version` probes bypass `lite` in the shim.
 - A harness process keeps the key it started with, and the proxy's keys expire on their own.
   The adapter's `credentialGeneration` lets the session manager replace an idle process after a
-  renewal, and a turn that fails on a gateway 401 before any side effect is sent again once
-  ([ProviderAuthRetry.ts](../../apps/server/src/orchestration-v2/ProviderAuthRetry.ts)).
+  renewal. A turn that fails on a gateway 401 gets a fresh process once: before any side effect
+  the message is sent again, after one the resumed native thread is told to continue, never
+  re-running a tool ([ProviderAuthRetry.ts](../../apps/server/src/orchestration-v2/ProviderAuthRetry.ts)).
 - `lite` only injects gateway settings that the caller did not already set. A driver that passes
   its own provider config (OpenCode's `OPENCODE_CONFIG_CONTENT`, Codex `-c` after the
   subcommand) silently routes around the gateway.

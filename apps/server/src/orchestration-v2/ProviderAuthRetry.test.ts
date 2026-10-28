@@ -3,6 +3,7 @@ import {
   MessageId,
   ProviderInstanceId,
   ProviderSessionId,
+  ProviderThreadId,
   RunId,
   ThreadId,
   type OrchestrationV2ThreadProjection,
@@ -19,6 +20,7 @@ const threadId = ThreadId.make("thread:auth-retry");
 const runId = RunId.make("run:auth-retry");
 const instanceId = ProviderInstanceId.make("litellm_claude");
 const providerSessionId = ProviderSessionId.make("session:auth-retry");
+const providerThreadId = ProviderThreadId.make("provider-thread:auth-retry");
 const userMessageId = MessageId.make("message:user");
 const now = DateTime.makeUnsafe("2026-10-24T12:00:00.000Z");
 
@@ -27,6 +29,7 @@ const projection = (
     readonly runs?: ReadonlyArray<Record<string, unknown>>;
     readonly turnItems?: ReadonlyArray<Record<string, unknown>>;
     readonly messages?: ReadonlyArray<Record<string, unknown>>;
+    readonly nativeThreadRef?: Record<string, unknown> | null;
   } = {},
 ) =>
   ({
@@ -38,12 +41,22 @@ const projection = (
         providerInstanceId: instanceId,
         modelSelection: { instanceId, model: "gpt-5" },
         userMessageId,
+        providerThreadId,
         status: "failed",
         requestedAt: now,
         completedAt: now,
       },
     ],
     messages: overrides.messages ?? [{ id: userMessageId, text: "Fix the build", attachments: [] }],
+    providerThreads: [
+      {
+        id: providerThreadId,
+        nativeThreadRef:
+          overrides.nativeThreadRef === undefined
+            ? { driver: "claudeAgent", nativeId: "native-thread", strength: "strong" }
+            : overrides.nativeThreadRef,
+      },
+    ],
     turnItems: overrides.turnItems ?? [
       { runId, type: "user_message" },
       { runId, type: "assistant_message" },
@@ -115,14 +128,27 @@ it.effect("replaces the session and sends the user's message again once", () =>
   }),
 );
 
+const ranATool = [
+  { runId, type: "command_execution" },
+  { runId, type: "error" },
+];
+
+it.effect("resumes a turn that already ran tools instead of sending the message again", () =>
+  Effect.gen(function* () {
+    const { commands, released } = yield* run(projection({ turnItems: ranATool }));
+    assert.deepEqual(released, [providerSessionId]);
+    assert.lengthOf(commands, 1);
+    const command = commands[0]!;
+    if (command.type !== "message.dispatch") return assert.fail("expected a message dispatch");
+    assert.equal(command.text, "Continue where you left off.");
+    assert.deepEqual(command.attachments, []);
+    assert.equal(command.messageId, MessageId.make(`message:auth-retry:${runId}`));
+  }),
+);
+
 it.effect("leaves the failure alone when retrying could repeat or loop", () =>
   Effect.gen(function* () {
-    const ranATool = projection({
-      turnItems: [
-        { runId, type: "command_execution" },
-        { runId, type: "error" },
-      ],
-    });
+    const unresumable = projection({ turnItems: ranATool, nativeThreadRef: null });
     const alreadyRetried = projection({
       messages: [
         { id: userMessageId, text: "Fix the build", attachments: [] },
@@ -137,7 +163,7 @@ it.effect("leaves the failure alone when retrying could repeat or loop", () =>
         },
       ],
     });
-    for (const records of [ranATool, alreadyRetried, retryOfRetry]) {
+    for (const records of [unresumable, alreadyRetried, retryOfRetry]) {
       const { commands, released } = yield* run(records);
       assert.deepEqual([commands.length, released.length], [0, 0]);
     }

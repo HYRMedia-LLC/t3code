@@ -30,7 +30,8 @@ for up to 14 days; after that, sign in again.
 
 A running agent keeps the key it started with. After a renewal, T3 Code restarts the agent
 before its next message and resumes the conversation. If a key still expires during a turn,
-and that turn had not run any commands or edits yet, T3 Code sends your message again once.
+T3 Code restarts the agent with the renewed key once. If the turn had not run any commands or
+edits yet, it sends your message again. Otherwise, it tells the agent to continue the turn.
 
 If you sign in from another device and the final `localhost` page does not load, copy its
 full URL and paste it in T3 Code when it asks.

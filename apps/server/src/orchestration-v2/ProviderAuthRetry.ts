@@ -11,6 +11,7 @@ import {
 import * as Effect from "effect/Effect";
 
 import { cancelledBeforeStart } from "./RestartBackgroundNote.ts";
+import { CONTINUE_PROMPT } from "./RestartContinuation.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 
@@ -26,8 +27,8 @@ export const isGatewayAuthRejection = (failure: OrchestrationV2ProviderFailure):
   (failure.code !== null && AUTH_REJECTION_CODES.has(failure.code)) ||
   AUTH_REJECTION_TEXT.test(failure.message);
 
-// Sending the message again is only safe when the failed turn changed nothing:
-// a gateway 401 normally arrives on the first model call, before any tool.
+// Sending the message again is only safe when the failed turn changed nothing.
+// A turn that ran tools resumes its native thread and continues instead.
 const HARMLESS_TURN_ITEMS: ReadonlySet<OrchestrationV2TurnItem["type"]> = new Set([
   "user_message",
   "assistant_message",
@@ -43,7 +44,7 @@ const turnHadSideEffects = (items: ReadonlyArray<OrchestrationV2TurnItem>): bool
 /**
  * Providers that keep the key they started with (LiteLLM instances) fail once
  * that key expires. Replace the session, which makes the next process read the
- * renewed key, and send the user's message again, once.
+ * renewed key, then send the user's message again or continue the turn, once.
  */
 export const retryAfterGatewayAuthRejection = Effect.fn(
   "ProviderAuthRetry.retryAfterGatewayAuthRejection",
@@ -76,16 +77,28 @@ export const retryAfterGatewayAuthRejection = Effect.fn(
   )
     return;
   if (!(yield* providerSessions.keepsStartupCredentials(source.providerInstanceId))) return;
-  const sourceRecords = yield* threads.getThreadRecords(input.threadId, ["messages", "turnItems"], {
-    messageIds: [source.userMessageId],
-    turnItemRunIds: [source.id],
-  });
-  if (turnHadSideEffects(sourceRecords.turnItems.filter((item) => item.runId === source.id)))
-    return;
-  const sourceMessage = sourceRecords.messages.find(
-    (message) => message.id === source.userMessageId,
+  const sourceRecords = yield* threads.getThreadRecords(
+    input.threadId,
+    ["messages", "turnItems", "providerThreads"],
+    { messageIds: [source.userMessageId], turnItemRunIds: [source.id] },
   );
-  if (sourceMessage === undefined) return;
+  const resumesTurn = turnHadSideEffects(
+    sourceRecords.turnItems.filter((item) => item.runId === source.id),
+  );
+  const providerThread = sourceRecords.providerThreads.find(
+    (thread) => thread.id === source.providerThreadId,
+  );
+  // Without a resumable native thread, "continue" would reach an agent with no memory of the turn.
+  if (
+    resumesTurn &&
+    (providerThread?.nativeThreadRef?.nativeId == null ||
+      providerThread.nativeThreadRef.strength !== "strong")
+  )
+    return;
+  const resent = resumesTurn
+    ? undefined
+    : sourceRecords.messages.find((message) => message.id === source.userMessageId);
+  if (!resumesTurn && resent === undefined) return;
 
   // Codex runs every thread in one process: never stop another thread's turn to retry this one.
   const replaced = yield* providerSessions.releaseIfIdle({
@@ -94,19 +107,22 @@ export const retryAfterGatewayAuthRejection = Effect.fn(
     detail: "The gateway rejected the session's key.",
   });
   if (!replaced) return;
+  const text = resent?.text ?? CONTINUE_PROMPT;
   yield* threads.dispatch({
     type: "message.dispatch",
     commandId: CommandId.make(`command:auth-retry:${input.sourceRunId}`),
     threadId: input.threadId,
     messageId,
-    text: sourceMessage.text,
-    ...(sourceMessage.context === undefined ? {} : { context: sourceMessage.context }),
-    attachments: sourceMessage.attachments,
+    text,
+    ...(resent?.context === undefined ? {} : { context: resent.context }),
+    attachments: resent?.attachments ?? [],
     notification: {
       source: { kind: "system" },
       outcome: "updated",
-      summary: "The gateway key expired. T3 Code renewed it and sent your message again",
-      detail: sourceMessage.text,
+      summary: resumesTurn
+        ? "The gateway key expired. T3 Code renewed it and resumed this turn"
+        : "The gateway key expired. T3 Code renewed it and sent your message again",
+      detail: text,
     },
     modelSelection: source.modelSelection,
     dispatchMode: { type: "start_immediately" },
