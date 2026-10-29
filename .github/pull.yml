@@ -1,0 +1,8 @@
+# Pull app (github.com/apps/pull) syncs main with upstream. Never use hardreset:
+# main carries fork-only commits.
+version: "1"
+rules:
+  - base: main
+    upstream: pingdotgg:main
+    mergeMethod: merge
+    mergeUnstable: false

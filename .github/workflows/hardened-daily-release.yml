@@ -20,23 +20,13 @@ permissions:
 
 jobs:
   release:
-    name: Sync upstream and release
+    name: Release
     if: github.repository == 'hyrmedia-hector/t3code'
     runs-on: macos-15
     timeout-minutes: 90
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      # GITHUB_TOKEN cannot push upstream commits that change workflow files.
-      - name: Sync main with upstream
-        env:
-          GH_TOKEN: ${{ secrets.FORK_SYNC_TOKEN }}
-        run: |
-          gh api -X POST "repos/$GITHUB_REPOSITORY/merge-upstream" -f branch=main --jq '.message' || {
-            echo "::error::Upstream does not merge cleanly into main. Merge pingdotgg/t3code main by hand, push, then rerun."
-            exit 1
-          }
-
       - name: Checkout
         uses: actions/checkout@v6
         with:
