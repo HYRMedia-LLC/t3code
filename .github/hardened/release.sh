@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Build, sign, notarize, and publish T3 Code (Hardened), the HYRMedia fork, for macOS arm64.
-# Runs on the self-hosted Mac that holds the HYRMedia Developer ID certificate and the asc login.
+# Needs the HYRMedia Developer ID certificate in a keychain. Notarizes with an App Store
+# Connect API key when APPLE_API_KEY_PATH, APPLE_API_KEY_ID, and APPLE_API_ISSUER are set,
+# otherwise with the local asc login.
 #
 # Usage: release.sh [--version X.Y.Z] [--no-publish] [checkout]
 #   checkout     T3 Code checkout to build (default: this repository)
@@ -90,9 +92,15 @@ node "$TOOLS/sign.mjs" "$OSX_SIGN" "$APP"
 codesign --verify --deep --strict "$APP"
 
 ditto -c -k --keepParent "$APP" "$OUT/notarize.zip"
-asc notarization submit --file "$OUT/notarize.zip" --wait --output json | tee "$OUT/notarization.json"
-grep -q '"status":"Accepted"' "$OUT/notarization.json" ||
-  { echo "Notarization was not accepted. See: asc notarization log --id <id>" >&2; exit 1; }
+if [[ -n "${APPLE_API_KEY_PATH:-}" ]]; then
+  xcrun notarytool submit "$OUT/notarize.zip" --wait --output-format json \
+    --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" |
+    tee "$OUT/notarization.json"
+else
+  asc notarization submit --file "$OUT/notarize.zip" --wait --output json | tee "$OUT/notarization.json"
+fi
+grep -q '"status": *"Accepted"' "$OUT/notarization.json" ||
+  { echo "Notarization was not accepted. See: xcrun notarytool log <id>" >&2; exit 1; }
 rm "$OUT/notarize.zip"
 xcrun stapler staple "$APP"
 spctl -a -t exec "$APP"

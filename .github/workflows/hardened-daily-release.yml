@@ -22,14 +22,15 @@ jobs:
   release:
     name: Sync upstream and release
     if: github.repository == 'hyrmedia-hector/t3code'
-    # The Mac with the HYRMedia Developer ID certificate and the asc notarization login.
-    runs-on: [self-hosted, macOS, ARM64, t3-hardened]
+    runs-on: macos-15
     timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
-      # gh uses the runner user's keychain login, not GITHUB_TOKEN: GITHUB_TOKEN cannot
-      # push upstream commits that change workflow files. Signing and asc also need that
-      # keychain, so the runner LaunchAgent must not set SessionCreate.
+      # GITHUB_TOKEN cannot push upstream commits that change workflow files.
       - name: Sync main with upstream
+        env:
+          GH_TOKEN: ${{ secrets.FORK_SYNC_TOKEN }}
         run: |
           gh api -X POST "repos/$GITHUB_REPOSITORY/merge-upstream" -f branch=main --jq '.message' || {
             echo "::error::Upstream does not merge cleanly into main. Merge pingdotgg/t3code main by hand, push, then rerun."
@@ -42,7 +43,6 @@ jobs:
           ref: main
           fetch-depth: 0
           fetch-tags: true
-          clean: true
           sparse-checkout: |
             /*
             !/.repos/
@@ -61,12 +61,48 @@ jobs:
             echo "release=true" >>"$GITHUB_OUTPUT"
           fi
 
-      - name: Install dependencies
+      - name: Setup dependencies
         if: steps.changes.outputs.release == 'true'
-        run: vp install
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+
+      - name: Setup Rust
+        if: steps.changes.outputs.release == 'true'
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-darwin
+
+      - name: Import signing certificate and notarization key
+        if: steps.changes.outputs.release == 'true'
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/hardened-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 16)"
+          echo "::add-mask::$keychain_password"
+          cert_path="$RUNNER_TEMP/hardened-signing.p12"
+          printf '%s' "$CSC_LINK" | base64 --decode >"$cert_path"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$cert_path" -k "$keychain" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm "$cert_path"
+          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY" >"$key_path"
+          echo "APPLE_API_KEY_PATH=$key_path" >>"$GITHUB_ENV"
 
       - name: Build, notarize, and publish
         if: steps.changes.outputs.release == 'true'
         env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           T3_HARDENED_OUT: ${{ runner.temp }}/hardened
         run: .github/hardened/release.sh
