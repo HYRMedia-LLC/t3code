@@ -19,13 +19,11 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Sync upstream and release
+  sync:
+    name: Sync upstream
     if: github.repository == 'hyrmedia-hector/t3code'
-    runs-on: macos-15
-    timeout-minutes: 90
-    env:
-      GH_TOKEN: ${{ github.token }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       # GITHUB_TOKEN cannot push upstream commits that change workflow files, so the
       # merge runs as the private hyrmedia-t3code-sync GitHub App.
@@ -44,6 +42,14 @@ jobs:
             exit 1
           }
 
+  release:
+    name: Release
+    needs: sync
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
@@ -59,7 +65,13 @@ jobs:
         name: Check for changes since the last release
         env:
           FORCE: ${{ inputs.force }}
+          HAS_SIGNING: ${{ secrets.CSC_LINK != '' && secrets.APPLE_API_KEY != '' }}
         run: |
+          if [[ "$HAS_SIGNING" != "true" ]]; then
+            echo "::warning::Signing secrets are not set, so no release was built."
+            echo "release=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
           last="$(gh release list -R "$GITHUB_REPOSITORY" --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // ""')"
           if [[ "$FORCE" != "true" && -n "$last" ]] && git diff --quiet "$last" HEAD -- . ':!.github'; then
             echo "No source changes since $last."
