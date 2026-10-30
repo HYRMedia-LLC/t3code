@@ -9,6 +9,8 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderSessionId,
+  type OrchestrationV2ProviderCapabilities,
   type ProviderAuthState,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -22,6 +24,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as ChildProcess from "effect/process/ChildProcess";
 
 import type { ProviderDriver, ProviderDriverCreateInput, ProviderInstance } from "./driver.ts";
+import { knownProviderFailureMessage } from "./failure.ts";
 import {
   applyLiteLLMStatus,
   liteLLMCallbackTarget,
@@ -30,6 +33,11 @@ import {
   parseLiteLLMModelIds,
   withLiteLLMLauncher,
 } from "./litellm.ts";
+import type {
+  ProviderAdapterV2OpenSessionInput,
+  ProviderAdapterV2SessionRuntime,
+  ProviderAdapterV2TurnInput,
+} from "./ProviderAdapter.ts";
 import * as ProviderHost from "./ProviderHost.ts";
 import { spawnAndCollect } from "./snapshotProbe.ts";
 
@@ -92,11 +100,24 @@ describe("applyLiteLLMStatus", () => {
         message: "Log in to Codex",
       }),
       { auth: { status: "authenticated" } },
-      null,
+      undefined,
     );
     assert.deepEqual(
       [harnessWantsLogin.status, harnessWantsLogin.auth.status, harnessWantsLogin.message],
       ["ready", "authenticated", undefined],
+    );
+  });
+
+  it("reports a failed gateway model list instead of the bundled catalog", () => {
+    const result = applyLiteLLMStatus(
+      snapshot(),
+      { auth: { status: "authenticated" } },
+      capabilities,
+    );
+    assert.equal(result.status, "error");
+    assert.deepEqual(
+      result.models.map((model) => model.slug),
+      ["my-alias"],
     );
   });
 
@@ -147,7 +168,7 @@ case "$1" in
     fi
     if [ -f "$FAKE_LITE_DIR/signed-in" ]; then echo sk-live-key; exit 0; fi
     echo "Error: Not authenticated. Run 'lite login'." >&2; exit 1 ;;
-  models) echo '[{"id": "gpt-5"}]' ;;
+  models) cat "$FAKE_LITE_DIR/models" 2>/dev/null || echo '[{"id": "gpt-5"}]' ;;
   login)
     echo "Opening browser to: https://gw.example/authorize?redirect_uri=http%3A%2F%2F127.0.0.1%3A5123%2Fcallback"
     touch "$FAKE_LITE_DIR/signed-in" ;;
@@ -190,6 +211,38 @@ interface FakeConfig {
 }
 
 const titleModels: Array<string> = [];
+const startedTurns: Array<string> = [];
+
+const sharedCapabilities = {
+  sessions: { supportsMultipleProviderThreadsPerSession: true },
+} as unknown as OrchestrationV2ProviderCapabilities;
+
+const fakeAdapter = {
+  instanceId,
+  driver: ProviderDriverKind.make("claudeAgent"),
+  getCapabilities: () => Effect.succeed(sharedCapabilities),
+  openSession: (input: ProviderAdapterV2OpenSessionInput) =>
+    Effect.succeed({
+      providerSessionId: input.providerSessionId,
+      providerSession: { capabilities: sharedCapabilities },
+      startTurn: (turn: ProviderAdapterV2TurnInput) =>
+        Effect.sync(() => void startedTurns.push(turn.modelSelection.model)),
+    } as unknown as ProviderAdapterV2SessionRuntime),
+} as unknown as ProviderInstance["orchestrationAdapter"];
+
+const signIn = (fixture: ReturnType<typeof makeFixture>) =>
+  NodeFS.writeFileSync(NodePath.join(fixture.dir, "signed-in"), "");
+const setGatewayModels = (fixture: ReturnType<typeof makeFixture>, ids: ReadonlyArray<string>) =>
+  NodeFS.writeFileSync(
+    NodePath.join(fixture.dir, "models"),
+    JSON.stringify(ids.map((id) => ({ id }))),
+  );
+const writeKeyExpiry = (fixture: ReturnType<typeof makeFixture>, expiresAt: number) => {
+  const tokenPath = NodePath.join(fixture.dir, ".litellm", "token.json");
+  NodeFS.mkdirSync(NodePath.dirname(tokenPath), { recursive: true });
+  NodeFS.writeFileSync(tokenPath, JSON.stringify({ expires_at: expiresAt, base_url: "x" }));
+};
+const farExpiry = Math.floor(Date.UTC(2099, 0, 1) / 1_000);
 
 const makeInnerDriver = (created: Array<ProviderDriverCreateInput<FakeConfig>>) =>
   ({
@@ -217,7 +270,7 @@ const makeInnerDriver = (created: Array<ProviderDriverCreateInput<FakeConfig>>) 
             streamChanges: Stream.empty,
             applyUsageLimits: () => Effect.void,
           },
-          orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
+          orchestrationAdapter: fakeAdapter,
           textGeneration: {
             generateCommitMessage: () => Effect.die("unused"),
             generatePrContent: () => Effect.die("unused"),
@@ -374,20 +427,83 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
   it.live("renews the key before a session starts inside lite's renewal window", () =>
     Effect.gen(function* () {
       using fixture = makeFixture();
-      const tokenPath = NodePath.join(fixture.dir, ".litellm", "token.json");
-      NodeFS.mkdirSync(NodePath.dirname(tokenPath));
-      const farExpiry = Math.floor(Date.UTC(2099, 0, 1) / 1_000);
-      NodeFS.writeFileSync(tokenPath, JSON.stringify({ expires_at: farExpiry, base_url: "x" }));
+      signIn(fixture);
+      writeKeyExpiry(fixture, farExpiry);
       const generation = (yield* createLiteLLMInstance(fixture, [])).orchestrationAdapter
-        .credentialGeneration!;
-      assert.equal(yield* generation, String(farExpiry));
-      assert.notInclude(fixture.calls().join("\n"), "auth print-token");
+        .launchGeneration!;
+      assert.equal(yield* generation, `${farExpiry}:gpt-5`);
+      assert.notInclude(fixture.calls(), "auth print-token renew");
 
-      NodeFS.writeFileSync(tokenPath, JSON.stringify({ expires_at: 1 }));
+      writeKeyExpiry(fixture, 1);
       fixture.environment.FAKE_LITE_RENEWED_EXPIRY = String(farExpiry + 86_400);
       const renewing = (yield* createLiteLLMInstance(fixture, [])).orchestrationAdapter
-        .credentialGeneration!;
-      assert.equal(yield* renewing, String(farExpiry + 86_400));
+        .launchGeneration!;
+      assert.equal(yield* renewing, `${farExpiry + 86_400}:gpt-5`);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("starts a new generation when the gateway's model list changes", () =>
+    Effect.gen(function* () {
+      using fixture = makeFixture();
+      signIn(fixture);
+      writeKeyExpiry(fixture, farExpiry);
+      const instance = yield* createLiteLLMInstance(fixture, []);
+      const before = yield* instance.orchestrationAdapter.launchGeneration!;
+
+      setGatewayModels(fixture, ["gpt-5", "gpt-6"]);
+      const refreshed = yield* instance.snapshot.refresh;
+      assert.deepEqual(
+        refreshed.models.map((model) => model.slug),
+        ["gpt-5", "gpt-6", "my-alias"],
+      );
+      const after = yield* instance.orchestrationAdapter.launchGeneration!;
+      assert.notEqual(after, before);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("reports a failed renewal as a sign-out instead of keeping the old generation", () =>
+    Effect.gen(function* () {
+      using fixture = makeFixture();
+      writeKeyExpiry(fixture, 1);
+      const instance = yield* createLiteLLMInstance(fixture, []);
+      assert.isUndefined(yield* instance.orchestrationAdapter.launchGeneration!);
+      const current = yield* instance.snapshot.getSnapshot;
+      assert.deepEqual([current.auth.status, current.status], ["unauthenticated", "error"]);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("opens one session per thread and refuses what the gateway cannot serve", () =>
+    Effect.gen(function* () {
+      using fixture = makeFixture();
+      const instance = yield* createLiteLLMInstance(fixture, []);
+      const adapter = instance.orchestrationAdapter;
+      const sessionInput = {
+        providerSessionId: ProviderSessionId.make("session:litellm"),
+      } as ProviderAdapterV2OpenSessionInput;
+      const signedOut = yield* adapter.openSession(sessionInput).pipe(Effect.scoped, Effect.flip);
+      assert.include(knownProviderFailureMessage(signedOut) ?? "", "Sign in again");
+
+      signIn(fixture);
+      yield* instance.snapshot.refresh;
+      const capabilities = yield* adapter.getCapabilities();
+      assert.isFalse(capabilities.sessions.supportsMultipleProviderThreadsPerSession);
+      const runtime = yield* adapter.openSession(sessionInput).pipe(Effect.scoped);
+
+      const turn = (model: string) =>
+        ({
+          threadId: "thread:1",
+          runId: "run:1",
+          modelSelection: { instanceId, model },
+          providerThread: { id: "provider-thread:1" },
+        }) as unknown as ProviderAdapterV2TurnInput;
+      startedTurns.length = 0;
+      yield* runtime.startTurn(turn("gpt-5"));
+      const removed = yield* runtime.startTurn(turn("claude-sonnet-4-5")).pipe(Effect.flip);
+      assert.include(
+        knownProviderFailureMessage(removed) ?? "",
+        "no longer serves claude-sonnet-4-5",
+      );
+      assert.deepEqual(startedTurns, ["gpt-5"]);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 

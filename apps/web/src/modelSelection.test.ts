@@ -254,80 +254,98 @@ describe("instance-scoped model selection", () => {
       availableModel: "gemini-3.1-pro",
       missingModel: "gemini-3.1-pro-high",
     },
-  ])("$driverName catalog gaps", ({ driverName, availableModel, missingModel }) => {
-    it("preserves a selected model when a catalog refresh no longer contains it", () => {
-      const providers = [
-        provider({
-          provider: ProviderDriverKind.make(driverName),
-          instanceId: driverName,
-          models: [availableModel],
-        }),
-      ];
-
-      expect(
-        resolveAppModelSelectionForInstance(
-          ProviderInstanceId.make(driverName),
-          settingsWithProviderInstances(),
-          providers,
-          missingModel,
-          { preserveUnavailableSelection: true },
-        ),
-      ).toBe(missingModel);
-      expect(
-        resolveAppModelSelectionForInstance(
-          ProviderInstanceId.make(driverName),
-          settingsWithProviderInstances(),
-          providers,
-          missingModel,
-        ),
-      ).toBe(availableModel);
-    });
-
-    it("adds the selected missing model as an unavailable option", () => {
-      const providers = [
-        provider({
-          provider: ProviderDriverKind.make(driverName),
-          instanceId: driverName,
-          models: [availableModel],
-        }),
-      ];
-      const entry = deriveProviderInstanceEntries(providers)[0]!;
-
-      expect(
-        getAppModelOptionsForInstance(settingsWithProviderInstances(), entry, missingModel),
-      ).toEqual([
-        expect.objectContaining({ slug: availableModel }),
-        expect.objectContaining({
-          slug: missingModel,
-          name: missingModel,
-          isUnavailable: true,
-        }),
-      ]);
-    });
-
-    it("does not resurrect a hidden model when the raw catalog omits it", () => {
-      const instanceId = ProviderInstanceId.make(driverName);
-      const driver = ProviderDriverKind.make(driverName);
-      const settings: UnifiedSettings = {
+    {
+      driverName: "claudeAgent",
+      instanceName: "litellm_claude",
+      availableModel: "gpt-5",
+      missingModel: "gpt-4o",
+    },
+  ])(
+    "$driverName $instanceName catalog gaps",
+    ({ driverName, instanceName = driverName, availableModel, missingModel }) => {
+      // A LiteLLM gateway can drop a model, so its instances keep the selection visible.
+      const catalogSettings = (): UnifiedSettings => ({
         ...settingsWithProviderInstances(),
-        providerModelPreferences: {
-          [instanceId]: {
-            hiddenModels: [missingModel],
-            modelOrder: [],
+        providerInstances: {
+          ...settingsWithProviderInstances().providerInstances,
+          [ProviderInstanceId.make("litellm_claude")]: {
+            driver: ProviderDriverKind.make("claudeAgent"),
+            launcher: "litellm",
           },
         },
-      };
-      const providers = [provider({ provider: driver, instanceId, models: [] })];
-      const entry = deriveProviderInstanceEntries(providers)[0]!;
+      });
+      it("preserves a selected model when a catalog refresh no longer contains it", () => {
+        const providers = [
+          provider({
+            provider: ProviderDriverKind.make(driverName),
+            instanceId: instanceName,
+            models: [availableModel],
+          }),
+        ];
 
-      expect(getAppModelOptionsForInstance(settings, entry, missingModel)).toEqual([]);
-      expect(
-        resolveAppModelSelectionForInstance(instanceId, settings, providers, missingModel, {
-          preserveUnavailableSelection: true,
-        }),
-      ).toBeNull();
-    });
-  });
+        expect(
+          resolveAppModelSelectionForInstance(
+            ProviderInstanceId.make(instanceName),
+            catalogSettings(),
+            providers,
+            missingModel,
+            { preserveUnavailableSelection: true },
+          ),
+        ).toBe(missingModel);
+        expect(
+          resolveAppModelSelectionForInstance(
+            ProviderInstanceId.make(instanceName),
+            catalogSettings(),
+            providers,
+            missingModel,
+          ),
+        ).toBe(availableModel);
+      });
+
+      it("adds the selected missing model as an unavailable option", () => {
+        const providers = [
+          provider({
+            provider: ProviderDriverKind.make(driverName),
+            instanceId: instanceName,
+            models: [availableModel],
+          }),
+        ];
+        const entry = deriveProviderInstanceEntries(providers)[0]!;
+
+        expect(getAppModelOptionsForInstance(catalogSettings(), entry, missingModel)).toEqual([
+          expect.objectContaining({ slug: availableModel }),
+          expect.objectContaining({
+            slug: missingModel,
+            name: missingModel,
+            isUnavailable: true,
+          }),
+        ]);
+      });
+
+      it("does not resurrect a hidden model when the raw catalog omits it", () => {
+        const instanceId = ProviderInstanceId.make(instanceName);
+        const driver = ProviderDriverKind.make(driverName);
+        const settings: UnifiedSettings = {
+          ...catalogSettings(),
+          providerModelPreferences: {
+            [instanceId]: {
+              hiddenModels: [missingModel],
+              modelOrder: [],
+            },
+          },
+        };
+        const providers = [provider({ provider: driver, instanceId, models: [] })];
+        const entry = deriveProviderInstanceEntries(providers)[0]!;
+
+        expect(getAppModelOptionsForInstance(settings, entry, missingModel)).toEqual([]);
+        expect(
+          resolveAppModelSelectionForInstance(instanceId, settings, providers, missingModel, {
+            preserveUnavailableSelection: true,
+          }),
+        ).toBeNull();
+      });
+    },
+  );
 
   it("falls back from an explicit non-OpenCode draft with a missing model", () => {
     const instanceId = ProviderInstanceId.make("codex");

@@ -6,7 +6,7 @@ import type {
   AcpRegistryOperationError,
   AcpRegistrySetProviderInput,
   ProviderDriverKind,
-  ProviderInstanceEnvironment,
+  ResolvedProviderInstanceEnvironment,
   ProviderInstanceId,
   ProviderInstanceLauncher,
   ServerProvider,
@@ -97,9 +97,11 @@ export interface ProviderDriverCreateInput<Config> {
   readonly instanceId: ProviderInstanceId;
   readonly displayName: string | undefined;
   readonly accentColor?: string | undefined;
-  readonly environment: ProviderInstanceEnvironment;
+  readonly environment: ResolvedProviderInstanceEnvironment;
   readonly enabled: boolean;
   readonly config: Config;
+  /** Set by a launcher whose processes keep their startup key and models; see `ProviderAdapterV2.launchGeneration`. */
+  readonly launchGeneration?: Effect.Effect<string | undefined>;
 }
 
 /** create calls with different instanceId/config must share no mutable state. */

@@ -99,7 +99,10 @@ it("recognises a gateway key rejection from Claude's code or another harness's t
       failure(null, "unexpected status 401 Unauthorized: Authentication Error, key expired"),
     ),
   );
+  assert.isTrue(isGatewayAuthRejection(failure(null, "AI_APICallError: statusCode: 403")));
   assert.isFalse(isGatewayAuthRejection(failure("api_error_529", "Overloaded")));
+  assert.isFalse(isGatewayAuthRejection(failure(null, "Read 401 lines from src/app.ts")));
+  assert.isFalse(isGatewayAuthRejection(failure(null, "Blocked an unauthorized write to /etc")));
 });
 
 it.effect("replaces the session and sends the user's message again once", () =>

@@ -8,6 +8,7 @@ import {
   ProviderSetupError,
   type ModelCapabilities,
   type ModelSelection,
+  type OrchestrationV2ProviderCapabilities,
   type ProviderInstanceId,
   type ServerProvider,
   type ServerProviderModel,
@@ -22,9 +23,9 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
+import * as Scope from "effect/Scope";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as HttpClient from "effect/http/HttpClient";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
@@ -34,6 +35,7 @@ import type { ProviderTextGeneration } from "./textGeneration.ts";
 import { ProviderDriverError } from "./errors.ts";
 import { mergeProviderInstanceEnvironment } from "./instanceEnvironment.ts";
 import * as ProviderAuthFlow from "./providerAuthFlow.ts";
+import * as ProviderAdapter from "./ProviderAdapter.ts";
 import * as ProviderHost from "./ProviderHost.ts";
 import type { ManagedServerProvider } from "./snapshot.ts";
 import { spawnAndCollect } from "./snapshotProbe.ts";
@@ -63,8 +65,18 @@ export type LiteLLMAuthState =
 
 export interface LiteLLMStatus {
   readonly auth: LiteLLMAuthState;
-  /** Gateway model ids, only fetched for harnesses whose catalog T3 owns. */
+  /** Gateway model ids; absent while signed out or when the gateway could not list them. */
   readonly models?: ReadonlyArray<string> | undefined;
+}
+
+/** A LiteLLM failure T3 explains itself, shown to the user as is. */
+export class LiteLLMGatewayError extends Schema.TaggedError<LiteLLMGatewayError>()(
+  "LiteLLMGatewayError",
+  { detail: Schema.String },
+) {
+  override get message(): string {
+    return this.detail;
+  }
 }
 
 /**
@@ -144,6 +156,8 @@ export const liteLLMCallbackTarget = (
   }
 };
 
+const modelListKey = (models: ReadonlyArray<string>) => [...models].sort().join("\n");
+
 const mergeGatewayModels = (
   current: ReadonlyArray<ServerProviderModel>,
   gatewayIds: ReadonlyArray<string>,
@@ -157,24 +171,38 @@ const mergeGatewayModels = (
   return [...gateway, ...current.filter((model) => model.isCustom && !listed.has(model.slug))];
 };
 
+/**
+ * `gatewayModelCapabilities` is `undefined` for harnesses that list the models
+ * `lite` syncs into them; otherwise the gateway's list replaces the catalog.
+ */
 export const applyLiteLLMStatus = (
   snapshot: ServerProvider,
   status: LiteLLMStatus,
-  gatewayModelCapabilities: ModelCapabilities | null,
+  gatewayModelCapabilities: ModelCapabilities | null | undefined,
 ): ServerProvider => {
   const authenticated = status.auth.status === "authenticated";
+  const ownsCatalog = gatewayModelCapabilities !== undefined;
   const base: ServerProvider = {
     ...snapshot,
     setup: { ...snapshot.setup, canAuthenticate: true, canInstall: false },
     auth: { status: authenticated ? "authenticated" : "unauthenticated", label: "LiteLLM SSO" },
-    ...(status.models && status.models.length > 0
-      ? { models: mergeGatewayModels(snapshot.models, status.models, gatewayModelCapabilities) }
+    ...(ownsCatalog
+      ? {
+          models: mergeGatewayModels(
+            snapshot.models,
+            status.models ?? [],
+            gatewayModelCapabilities,
+          ),
+        }
       : {}),
   };
   if (status.auth.status !== "authenticated" || !snapshot.enabled)
     return status.auth.status === "authenticated" || !snapshot.enabled
       ? base
       : { ...base, status: "error", message: status.auth.message };
+  // The bundled catalog names models the gateway may not serve.
+  if (ownsCatalog && status.models === undefined)
+    return { ...base, status: "error", message: "LiteLLM: Could not list the gateway's models." };
   // The harness's own account check knows nothing about the gateway key.
   if (snapshot.auth.status !== "unauthenticated" || !snapshot.installed) return base;
   const { message: _message, ...rest } = base;
@@ -190,7 +218,6 @@ const runLite = Effect.fn("LiteLLM.runLite")(function* (
 
 const checkStatus = Effect.fn("LiteLLM.checkStatus")(function* (
   environment: NodeJS.ProcessEnv,
-  withModels: boolean,
 ): Effect.fn.Return<LiteLLMStatus, never, ChildProcessSpawner.ChildProcessSpawner> {
   const hasGatewayUrl = Boolean(environment.LITELLM_PROXY_URL?.trim());
   const version = yield* runLite(["version"], environment).pipe(Effect.option);
@@ -216,7 +243,6 @@ const checkStatus = Effect.fn("LiteLLM.checkStatus")(function* (
         ),
       },
     };
-  if (!withModels) return { auth: { status: "authenticated" } };
   const models = yield* runLite(["models", "list", "--format", "json"], environment).pipe(
     Effect.map((result) => (result.code === 0 ? parseLiteLLMModelIds(result.stdout) : undefined)),
     Effect.orElseSucceed(() => undefined),
@@ -356,15 +382,22 @@ const makeLiteLLMAuth = Effect.fn("LiteLLM.makeAuth")(function* (input: {
 const wrapSnapshot = (
   inner: ManagedServerProvider,
   status: Effect.Effect<LiteLLMStatus>,
+  freshStatus: Effect.Effect<LiteLLMStatus>,
   apply: (snapshot: ServerProvider, status: LiteLLMStatus) => ServerProvider,
 ): ManagedServerProvider => ({
   ...inner,
   getSnapshot: Effect.zipWith(inner.getSnapshot, status, apply),
-  refresh: Effect.zipWith(inner.refresh, status, apply),
+  refresh: Effect.zipWith(inner.refresh, freshStatus, apply),
   streamChanges: inner.streamChanges.pipe(
     Stream.mapEffect((snapshot) => status.pipe(Effect.map((current) => apply(snapshot, current)))),
   ),
 });
+
+const servesRequestedModel = (
+  models: ReadonlyArray<ServerProviderModel>,
+  requested: string,
+  servesModel: LiteLLMLauncherSpec<unknown>["servesModel"],
+) => models.some((model) => model.slug === requested || servesModel?.(model, requested) === true);
 
 // Settings default to direct-provider model names that a gateway may not serve.
 const withGatewayModels = (
@@ -379,10 +412,7 @@ const withGatewayModels = (
     (input: I) =>
       snapshot.getSnapshot.pipe(
         Effect.flatMap(({ models }) => {
-          const requested = input.modelSelection.model;
-          const listed = models.some(
-            (model) => model.slug === requested || servesModel?.(model, requested) === true,
-          );
+          const listed = servesRequestedModel(models, input.modelSelection.model, servesModel);
           const fallback = models[0];
           return run(
             listed || fallback === undefined
@@ -445,33 +475,35 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
     const config = yield* spec
       .configure(input.config, { binaryPath, homeDir, environment: processEnv })
       .pipe(Effect.mapError((detail) => fail(detail)));
-    const instance = yield* driver.create({ ...input, config, environment });
 
-    const withModels = spec.gatewayModelCapabilities !== undefined;
-    const cached = yield* SubscriptionRef.make<
+    const scope = yield* Scope.Scope;
+    const innerSnapshot = yield* Deferred.make<ManagedServerProvider>();
+    const cached = yield* Ref.make<
       { readonly status: LiteLLMStatus; readonly checkedAt: number } | undefined
     >(undefined);
-    const check = checkStatus(processEnv, withModels).pipe(
-      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-    );
-    const status = Effect.gen(function* () {
-      const now = yield* Clock.currentTimeMillis;
-      const current = yield* SubscriptionRef.get(cached);
-      if (current && now - current.checkedAt < STATUS_TTL_MS) return current.status;
-      const next = yield* check;
-      yield* SubscriptionRef.set(cached, { status: next, checkedAt: now });
+    const freshStatus = Effect.gen(function* () {
+      const checkedAt = yield* Clock.currentTimeMillis;
+      const next = yield* checkStatus(processEnv).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+      const previous = yield* Ref.getAndSet(cached, { status: next, checkedAt });
+      // Harnesses list the models `lite` synced at spawn, so a new gateway list needs a new probe.
+      if (
+        previous?.status.models !== undefined &&
+        next.models !== undefined &&
+        modelListKey(previous.status.models) !== modelListKey(next.models)
+      )
+        yield* Deferred.await(innerSnapshot).pipe(
+          Effect.flatMap((inner) => inner.refresh),
+          Effect.forkIn(scope),
+        );
       return next;
     });
-    const snapshot = wrapSnapshot(instance.snapshot, status, (current, liteStatus) =>
-      applyLiteLLMStatus(current, liteStatus, spec.gatewayModelCapabilities ?? null),
-    );
-    const auth = yield* makeLiteLLMAuth({
-      instanceId: input.instanceId,
-      environment: processEnv,
-      onChange: SubscriptionRef.set(cached, undefined).pipe(
-        Effect.andThen(snapshot.refresh),
-        Effect.asVoid,
-      ),
+    const status = Effect.gen(function* () {
+      const current = yield* Ref.get(cached);
+      if (current && (yield* Clock.currentTimeMillis) - current.checkedAt < STATUS_TTL_MS)
+        return current.status;
+      return yield* freshStatus;
     });
     const tokenPath = path.join(
       processEnv.HOME ?? (yield* HostProcess.HomeDirectory),
@@ -482,25 +514,96 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
       Effect.map(parseLiteLLMKeyExpiry),
       Effect.orElseSucceed(() => undefined),
     );
-    // The key's expiry changes whenever `lite` renews it. Close to expiry, renew
-    // first so the process started for the next turn does not get the old key.
-    const credentialGeneration = Effect.gen(function* () {
+    // A process keeps the key and the model list `lite` gave it at spawn. Close to
+    // expiry, renew first so the process started for the next turn gets the new key.
+    const launchGeneration = Effect.gen(function* () {
       const expiry = yield* keyExpiry;
       if (expiry === undefined) return undefined;
-      if (expiry * 1_000 - (yield* Clock.currentTimeMillis) > LITE_RENEWAL_WINDOW_MS)
-        return String(expiry);
-      yield* runLite(["auth", "print-token"], processEnv).pipe(
-        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-        Effect.ignore,
-      );
-      return (yield* keyExpiry)?.toString();
+      if (expiry * 1_000 - (yield* Clock.currentTimeMillis) <= LITE_RENEWAL_WINDOW_MS) {
+        const renewed = yield* runLite(["auth", "print-token"], processEnv).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.map((result) => result.code === 0),
+          Effect.orElseSucceed(() => false),
+        );
+        // Publish the sign-out now, so the thread shows the sign-in notice.
+        if (!renewed) {
+          yield* freshStatus.pipe(
+            Effect.andThen(Deferred.await(innerSnapshot)),
+            Effect.flatMap((inner) => inner.refresh),
+            Effect.forkIn(scope),
+          );
+          return undefined;
+        }
+      }
+      const renewedExpiry = yield* keyExpiry;
+      const { models } = yield* status;
+      return renewedExpiry === undefined || models === undefined
+        ? undefined
+        : `${renewedExpiry}:${modelListKey(models)}`;
+    });
+
+    const instance = yield* driver.create({ ...input, config, environment, launchGeneration });
+    yield* Deferred.succeed(innerSnapshot, instance.snapshot);
+    const snapshot = wrapSnapshot(instance.snapshot, status, freshStatus, (current, liteStatus) =>
+      applyLiteLLMStatus(current, liteStatus, spec.gatewayModelCapabilities),
+    );
+    const auth = yield* makeLiteLLMAuth({
+      instanceId: input.instanceId,
+      environment: processEnv,
+      onChange: snapshot.refresh.pipe(Effect.asVoid),
+    });
+    const adapter = instance.orchestrationAdapter;
+    const perThreadSessions = (capabilities: OrchestrationV2ProviderCapabilities) => ({
+      ...capabilities,
+      sessions: { ...capabilities.sessions, supportsMultipleProviderThreadsPerSession: false },
     });
     return {
       ...instance,
       snapshot,
       auth,
+      invalidateCaches: Ref.set(cached, undefined).pipe(
+        Effect.andThen(instance.invalidateCaches ?? Effect.void),
+      ),
       textGeneration: withGatewayModels(instance.textGeneration, snapshot, spec.servesModel),
-      orchestrationAdapter: { ...instance.orchestrationAdapter, credentialGeneration },
+      orchestrationAdapter: {
+        ...adapter,
+        launchGeneration,
+        // New threads get their own session, so a new thread never inherits an old
+        // key or model list. Threads already on a shared session keep sharing it.
+        getCapabilities: () => adapter.getCapabilities().pipe(Effect.map(perThreadSessions)),
+        openSession: Effect.fn("LiteLLM.openSession")(function* (session) {
+          const current = yield* status;
+          if (current.auth.status !== "authenticated")
+            return yield* new ProviderAdapter.ProviderAdapterOpenSessionError({
+              driver: adapter.driver,
+              providerSessionId: session.providerSessionId,
+              cause: new LiteLLMGatewayError({
+                detail: `${current.auth.message} Sign in again in Settings > Providers.`,
+              }),
+            });
+          const runtime = yield* adapter.openSession(session);
+          return {
+            ...runtime,
+            startTurn: (turn) =>
+              snapshot.getSnapshot.pipe(
+                Effect.flatMap(({ models }) =>
+                  models.length === 0 ||
+                  servesRequestedModel(models, turn.modelSelection.model, spec.servesModel)
+                    ? runtime.startTurn(turn)
+                    : new ProviderAdapter.ProviderAdapterTurnStartError({
+                        driver: adapter.driver,
+                        threadId: turn.threadId,
+                        providerThreadId: turn.providerThread.id,
+                        runId: turn.runId,
+                        cause: new LiteLLMGatewayError({
+                          detail: `The LiteLLM gateway no longer serves ${turn.modelSelection.model}. Select another model.`,
+                        }),
+                      }),
+                ),
+              ),
+          } satisfies ProviderAdapter.ProviderAdapterV2SessionRuntime;
+        }),
+      },
     } satisfies ProviderInstance;
   });
   return { ...driver, launchers: { ...driver.launchers, litellm: { create } } };
