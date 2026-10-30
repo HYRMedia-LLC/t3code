@@ -1,3 +1,4 @@
+import type { LiteLLMDefaultRequestTag } from "./settings.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
@@ -73,8 +74,8 @@ export type ProviderInstanceEnvironment = typeof ProviderInstanceEnvironment.Typ
 export const ProviderInstanceLauncher = Schema.Literal("litellm");
 export type ProviderInstanceLauncher = typeof ProviderInstanceLauncher.Type;
 
-const REQUEST_TAG_MAX_CHARS = 64;
-const REQUEST_TAGS_MAX = 16;
+export const REQUEST_TAG_MAX_CHARS = 64;
+export const REQUEST_TAGS_MAX = 16;
 
 /** One LiteLLM request tag. Tags travel comma-separated, so a tag holds no comma. */
 export const LiteLLMRequestTag = TrimmedNonEmptyString.check(
@@ -96,6 +97,34 @@ export const parseLiteLLMRequestTags = (text: string): Array<string> =>
         .filter((tag) => tag.length > 0),
     ),
   ].slice(0, REQUEST_TAGS_MAX);
+
+/** A `category:value` tag, such as `jira:PROJ-1234`, goes to the gateway unchanged. */
+export const isCategorizedLiteLLMRequestTag = (tag: string): boolean => /^[\w-]+:./.test(tag);
+
+export const LITELLM_TOOL_TAG_PREFIX = "tool:";
+
+const LITELLM_HARNESS_BY_DRIVER: Readonly<Record<string, string>> = {
+  claudeAgent: "claude",
+  codex: "codex",
+  opencode: "opencode",
+};
+
+/** The `tool:` value sent for a thread with no tool tag of its own, if any. */
+export const automaticLiteLLMToolValue = (
+  driver: string | undefined,
+  defaultTag: LiteLLMDefaultRequestTag,
+): string | undefined => {
+  if (defaultTag.mode === "off") return undefined;
+  const customTool =
+    defaultTag.mode === "custom"
+      ? parseLiteLLMRequestTags(defaultTag.custom).find((tag) =>
+          tag.startsWith(LITELLM_TOOL_TAG_PREFIX),
+        )
+      : undefined;
+  if (customTool) return customTool.slice(LITELLM_TOOL_TAG_PREFIX.length);
+  const harness = driver === undefined ? undefined : LITELLM_HARNESS_BY_DRIVER[driver];
+  return harness && `T3-Code/${harness}`;
+};
 
 /** What drivers receive: every secret reference has been read into a plain value. */
 export type ResolvedProviderInstanceEnvironment = ReadonlyArray<

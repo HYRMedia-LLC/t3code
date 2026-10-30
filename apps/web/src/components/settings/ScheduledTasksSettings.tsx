@@ -91,6 +91,7 @@ import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "../ui/men
 import { ToggleGroup, Toggle } from "../ui/toggle-group";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "../ui/empty";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
+import { RequestTagFields } from "../chat/RequestTagFields";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import {
@@ -1178,6 +1179,7 @@ function ScheduledTaskEditorForm({
   const activeDriverKind = instanceEntries.find(
     (entry) => entry.instanceId === activeInstanceId,
   )?.driverKind;
+  const [requestTagsError, setRequestTagsError] = useState<string | null>(null);
   const requestTagsSupported =
     activeDriverKind !== undefined &&
     supportsLiteLLMRequestTags(settings, activeInstanceId, activeDriverKind);
@@ -1508,15 +1510,15 @@ function ScheduledTaskEditorForm({
           </Field>
 
           {requestTagsSupported ? (
-            <Field label="Tags" hint="LiteLLM, optional" htmlFor="scheduled-task-request-tags">
-              <Input
-                id="scheduled-task-request-tags"
-                nativeInput
-                placeholder="Separate tags with commas"
+            <Field label="Tags" hint="LiteLLM, optional">
+              <RequestTagFields
                 value={draft.requestTags}
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, requestTags: event.target.value }))
-                }
+                driver={activeDriverKind}
+                defaultTag={settings.liteLLMDefaultRequestTag}
+                onChange={({ tags, error }) => {
+                  setRequestTagsError(error);
+                  setDraft((current) => ({ ...current, requestTags: tags.join(", ") }));
+                }}
               />
             </Field>
           ) : null}
@@ -1804,7 +1806,14 @@ function ScheduledTaskEditorForm({
         </DialogClose>
         <Button
           size="sm"
-          disabled={!canOperate || saving || editingTaskMissing || !connected || !tasksQuery.data}
+          disabled={
+            !canOperate ||
+            saving ||
+            editingTaskMissing ||
+            !connected ||
+            !tasksQuery.data ||
+            (requestTagsSupported && requestTagsError !== null)
+          }
           onClick={() => void submit()}
         >
           {draft.editingId ? "Save task" : "Create task"}

@@ -58,12 +58,16 @@ T3 Code sends [request tags](https://docs.litellm.ai/docs/proxy/request_tags) wi
 Claude, Codex, and OpenCode agent turns, so you can track spend by tag on the gateway. Titles,
 commit messages, and other text generation do not carry tags.
 
-- By default, each request carries the repository name, for example `repo:t3code`, and
-  `project:general-admin`. To use your own text instead of the repository name, or to turn both
-  off, change **LiteLLM default request tag** in **Settings > Providers > Advanced**.
-- To set tags for one thread, use **Tags** in the composer, separated by commas. Each tag is sent
-  as `project:<tag>` and replaces `project:general-admin`. A change applies from the next message
-  after the thread's background work ends. A change to the default tag applies the same way.
+- By default, each request carries the repository name, for example `repo:t3code`,
+  `project:general-admin`, and the harness, for example `tool:T3-Code/claude`. To use your own text
+  instead of the repository name, or to turn all three off, change **LiteLLM default request tag**
+  in **Settings > Providers > Advanced**.
+- To set tags for one thread, use **Tags** in the composer. Fill in **Jira ticket**, **Project**,
+  **Environment**, or **Tool**, and T3 Code adds the category for you, for example
+  `jira:PROJ-1234`. Use **Other tags** for your own categories, such as `team:platform`. Separate
+  more than one value with commas. A tag can have 64 characters, with its category. Any tag
+  replaces `project:general-admin`, and **Tool** replaces the harness tag. A change applies from the next message after the thread's background work ends.
+  A change to the default tag applies the same way.
 - Threads that a thread starts, such as delegated tasks, forks, and threads an agent creates,
   copy its tags. A scheduled task keeps the tags you set on it.
 

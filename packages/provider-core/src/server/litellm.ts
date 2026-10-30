@@ -5,6 +5,9 @@
  * `lite` owns the key, its refresh, and the gateway URL (`LITELLM_PROXY_URL`).
  */
 import {
+  automaticLiteLLMToolValue,
+  isCategorizedLiteLLMRequestTag,
+  LITELLM_TOOL_TAG_PREFIX,
   parseLiteLLMRequestTags,
   ProviderSetupError,
   type ModelCapabilities,
@@ -620,11 +623,15 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
             ? [`repo:${yield* repositoryTag(policy.cwd)}`]
             : [];
       const threadTags = (policy.requestTags ?? []).map((tag) =>
-        tag.startsWith(PROJECT_TAG_PREFIX) ? tag : `${PROJECT_TAG_PREFIX}${tag}`,
+        isCategorizedLiteLLMRequestTag(tag) ? tag : `${PROJECT_TAG_PREFIX}${tag}`,
       );
       const projectTags =
         threadTags.length === 0 && setting.mode !== "off" ? [DEFAULT_PROJECT_TAG] : threadTags;
-      const tags = [...new Set([...defaultTags, ...projectTags])];
+      const toolValue = projectTags.some((tag) => tag.startsWith(LITELLM_TOOL_TAG_PREFIX))
+        ? undefined
+        : automaticLiteLLMToolValue(driver.driverKind, setting);
+      const toolTags = toolValue === undefined ? [] : [`${LITELLM_TOOL_TAG_PREFIX}${toolValue}`];
+      const tags = [...new Set([...defaultTags, ...projectTags, ...toolTags])];
       return tags.length === 0
         ? policy
         : {

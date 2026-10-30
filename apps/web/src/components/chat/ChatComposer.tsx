@@ -2329,10 +2329,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ? routeKind === "server" && activeThread
       ? {
           value: activeThread.requestTags.join(", "),
+          defaultTag: settings.liteLLMDefaultRequestTag,
           onCommit: commitThreadRequestTags,
         }
       : {
           value: composerDraft.requestTags,
+          defaultTag: settings.liteLLMDefaultRequestTag,
           onCommit: (text: string) => setComposerDraftRequestTags(composerDraftTarget, text),
         }
     : null;

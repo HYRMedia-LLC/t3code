@@ -15,7 +15,3 @@ export function supportsRequestTags(
     config.settings.providerInstances[instanceId]?.launcher === "litellm"
   );
 }
-
-export function formatRequestTags(tags: ReadonlyArray<string>): string {
-  return tags.join(", ");
-}
