@@ -54,6 +54,7 @@ describe("V2 preview upgrade", () => {
         [72, "WaitingLinkRequestIndex"],
         [73, "ActiveTurnItemIndexes"],
         [74, "ScheduledTaskRequestTags"],
+        [75, "ExcludeAttachmentPlaceholdersFromSearch"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -151,6 +152,7 @@ describe("V2 preview upgrade", () => {
         [72, "WaitingLinkRequestIndex"],
         [73, "ActiveTurnItemIndexes"],
         [74, "ScheduledTaskRequestTags"],
+        [75, "ExcludeAttachmentPlaceholdersFromSearch"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
