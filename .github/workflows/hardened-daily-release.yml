@@ -21,7 +21,7 @@ permissions:
 jobs:
   sync:
     name: Sync upstream
-    if: github.repository == 'hyrmedia-hector/t3code'
+    if: github.repository == 'HYRMedia-LLC/t3code'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

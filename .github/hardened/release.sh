@@ -17,7 +17,7 @@
 # Installed copies check github.com/$REPO releases for updates.
 set -euo pipefail
 
-REPO="hyrmedia-hector/t3code"
+REPO="HYRMedia-LLC/t3code"
 TOOLS="$(cd "$(dirname "$0")" && pwd)"
 CHECKOUT="$(cd "$TOOLS/../.." && pwd)"
 OUT_ROOT="${T3_HARDENED_OUT:-$HOME/t3-fork-release/out}"
