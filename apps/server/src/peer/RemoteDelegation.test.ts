@@ -88,6 +88,7 @@ interface BoxThread {
   readonly linkOrigin: Ref.Ref<{ readonly sessionId: string; readonly label: string } | null>;
   /** The parent the launch names, so the thread there can link back to it. */
   readonly delegatedFrom: Ref.Ref<ThreadLaunch.ThreadLaunchInput["delegatedFrom"] | null>;
+  readonly requestTags: Ref.Ref<ThreadLaunch.ThreadLaunchInput["requestTags"] | null>;
   /** The model and modes it was launched with. */
   readonly launchedWith: Ref.Ref<LaunchedWith | null>;
   /** The first message the thread there was launched with. */
@@ -136,6 +137,7 @@ const makeBoxThread = Effect.gen(function* () {
       null,
     ),
     delegatedFrom: yield* Ref.make<ThreadLaunch.ThreadLaunchInput["delegatedFrom"] | null>(null),
+    requestTags: yield* Ref.make<ThreadLaunch.ThreadLaunchInput["requestTags"] | null>(null),
     launchedWith: yield* Ref.make<LaunchedWith | null>(null),
     message: yield* Ref.make<string | null>(null),
     status: yield* Ref.make<OrchestrationV2Run["status"]>("running"),
@@ -424,6 +426,7 @@ const boxToolkitLayer = (thread: BoxThread) => {
           Ref.set(thread.launched, input.threadId!).pipe(
             Effect.andThen(Ref.set(thread.linkOrigin, input.linkOrigin ?? null)),
             Effect.andThen(Ref.set(thread.delegatedFrom, input.delegatedFrom ?? null)),
+            Effect.andThen(Ref.set(thread.requestTags, input.requestTags ?? null)),
             Effect.andThen(Ref.set(thread.message, input.initialMessage?.text ?? null)),
             Effect.andThen(
               Ref.set(thread.launchedWith, {
@@ -648,6 +651,7 @@ const seedParent = (laptopEnv: Effect.Success<ReturnType<typeof makeLaptop>>) =>
       threadId: parentThreadId,
       projectId: ProjectId.make("project:laptop"),
       title: "Laptop parent",
+      requestTags: ["billing"],
       modelSelection,
       runtimeMode: "full-access",
       interactionMode: "default",
@@ -818,6 +822,7 @@ it.effect("a task delegated to the box wakes the laptop's parent when it ends th
         threadId: parentThreadId,
         title: "Laptop parent",
       });
+      expect(yield* Ref.get(thread.requestTags)).toEqual(["billing"]);
       // A retry with the same key launches nothing new and records nothing new.
       const retried = yield* delegateToBox(a);
       expect(retried.taskId).toBe(delegated.taskId);

@@ -161,6 +161,8 @@ const layerBeforeUnchangedWriteEventSink = (before: Ref.Ref<Effect.Effect<void>>
   ).pipe(Layer.provide(layerTestEventSink));
 
 const CodexCapabilities: OrchestrationV2ProviderCapabilities = CodexProviderCapabilitiesV2;
+const tagsOfPolicy = (policy: ProviderAdapter.ProviderAdapterV2RuntimePolicy) =>
+  Effect.succeed((policy.requestTags ?? []).join(","));
 const ExclusiveCapabilities: OrchestrationV2ProviderCapabilities = {
   ...CodexCapabilities,
   sessions: {
@@ -343,6 +345,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
     readonly spawnBeforeOpen?: boolean;
     readonly scopeCloseReached?: Deferred.Deferred<void>;
     readonly launchGeneration?: Effect.Effect<string | undefined>;
+    readonly launchTags?: ProviderAdapter.ProviderAdapterV2["Service"]["launchTags"];
   } = {},
 ) {
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
@@ -367,6 +370,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
     ...(options.launchGeneration === undefined
       ? {}
       : { launchGeneration: options.launchGeneration }),
+    ...(options.launchTags === undefined ? {} : { launchTags: options.launchTags }),
     openSession: (input) =>
       Effect.gen(function* () {
         if (options.spawnBeforeOpen === true) {
@@ -495,6 +499,7 @@ function layerTest(input: {
   readonly spawnBeforeOpen?: boolean;
   readonly scopeCloseReached?: Deferred.Deferred<void>;
   readonly launchGeneration?: Effect.Effect<string | undefined>;
+  readonly launchTags?: ProviderAdapter.ProviderAdapterV2["Service"]["launchTags"];
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
   readonly projectServiceLayer?: Layer.Layer<ProjectService.ProjectService>;
 }) {
@@ -534,6 +539,7 @@ function layerTest(input: {
         ? {}
         : { scopeCloseReached: input.scopeCloseReached }),
       ...(input.launchGeneration === undefined ? {} : { launchGeneration: input.launchGeneration }),
+      ...(input.launchTags === undefined ? {} : { launchTags: input.launchTags }),
     }).pipe(Effect.map(ProviderAdapterRegistry.layerSingle)),
   );
   const layerConfiguredMcpRegistry =
@@ -1010,11 +1016,80 @@ it.effect("ProviderSessionManagerV2 replaces an idle session after its key is re
         [(yield* Ref.get(state)).openCount, (yield* Ref.get(state)).closeCount],
         [2, 1],
       );
+
+      // The process reads its request tags at spawn, so an edit needs a new one.
+      const openTagged = (requestTags: ReadonlyArray<string>) =>
+        manager.open({
+          threadId,
+          providerSessionId,
+          modelSelection,
+          runtimePolicy: { ...runtimePolicy, requestTags },
+        });
+      const tagged = yield* openTagged(["feature-x"]);
+      assert.notStrictEqual(tagged, second);
+      assert.strictEqual(yield* openTagged(["feature-x"]), tagged);
+      assert.deepEqual(
+        [(yield* Ref.get(state)).openCount, (yield* Ref.get(state)).closeCount],
+        [3, 2],
+      );
     });
 
     yield* effect.pipe(
       Effect.provide(
-        layerTest({ state, idleTimeoutMs: 60_000, launchGeneration: Ref.get(generation) }),
+        layerTest({
+          state,
+          idleTimeoutMs: 60_000,
+          launchGeneration: Ref.get(generation),
+          launchTags: tagsOfPolicy,
+        }),
+      ),
+    );
+  }),
+);
+
+it.effect("ProviderSessionManagerV2 keeps a shared process when one thread's tags differ", () =>
+  Effect.gen(function* () {
+    const state = yield* Ref.make(emptyState);
+    const effect = Effect.gen(function* () {
+      const eventSink = yield* EventSink.EventSinkV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+      const now = yield* DateTime.now;
+      const first = ThreadId.make("thread-provider-session-manager-shared-tags-a");
+      const second = ThreadId.make("thread-provider-session-manager-shared-tags-b");
+      const providerSessionId = idAllocator.derive.providerSession({
+        providerInstanceId: modelSelection.instanceId,
+      });
+      yield* eventSink.write({
+        events: [
+          yield* makeThreadCreatedEvent({ idAllocator, threadId: first, now }),
+          yield* makeThreadCreatedEvent({ idAllocator, threadId: second, now }),
+        ],
+      });
+      const open = (threadId: ThreadId, requestTags: ReadonlyArray<string>) =>
+        manager.open({
+          threadId,
+          providerSessionId,
+          modelSelection,
+          runtimePolicy: { ...runtimePolicy, requestTags },
+        });
+      const shared = yield* open(first, ["a"]);
+      assert.strictEqual(yield* open(second, []), shared);
+      assert.strictEqual(yield* open(first, ["a"]), shared);
+      assert.deepEqual(
+        [(yield* Ref.get(state)).openCount, (yield* Ref.get(state)).closeCount],
+        [1, 0],
+      );
+    });
+
+    yield* effect.pipe(
+      Effect.provide(
+        layerTest({
+          state,
+          idleTimeoutMs: 60_000,
+          launchGeneration: Effect.succeed("key-1"),
+          launchTags: tagsOfPolicy,
+        }),
       ),
     );
   }),

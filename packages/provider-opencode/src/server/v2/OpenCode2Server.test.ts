@@ -207,6 +207,15 @@ describe("OpenCode2Server spawned server", () => {
       assert.strictEqual(first.version, "2.0.18");
       assert.strictEqual(first.external, false);
       assert.strictEqual(second.client, first.client);
+
+      const tags = { LITELLM_REQUEST_TAGS: "project:billing" };
+      const tagged = yield* server.withConnection((connection) => Effect.succeed(connection), tags);
+      const taggedAgain = yield* server.withConnection(
+        (connection) => Effect.succeed(connection),
+        tags,
+      );
+      assert.notStrictEqual(tagged.url, first.url);
+      assert.strictEqual(taggedAgain.url, tagged.url);
     }).pipe(
       Effect.scoped,
       Effect.provide(

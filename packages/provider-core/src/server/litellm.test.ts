@@ -11,6 +11,7 @@ import {
   ProviderInstanceId,
   ProviderSessionId,
   type OrchestrationV2ProviderCapabilities,
+  type ServerSettings,
   type ProviderAuthState,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -31,10 +32,12 @@ import {
   liteLLMShimScript,
   liteLLMSignedOutMessage,
   parseLiteLLMModelIds,
+  type LiteLLMHarness,
   withLiteLLMLauncher,
 } from "./litellm.ts";
 import type {
   ProviderAdapterV2OpenSessionInput,
+  ProviderAdapterV2RuntimePolicy,
   ProviderAdapterV2SessionRuntime,
   ProviderAdapterV2TurnInput,
 } from "./ProviderAdapter.ts";
@@ -294,9 +297,11 @@ const makeInnerDriver = (created: Array<ProviderDriverCreateInput<FakeConfig>>) 
 const createLiteLLMInstance = (
   fixture: ReturnType<typeof makeFixture>,
   created: Array<ProviderDriverCreateInput<FakeConfig>>,
+  options: { readonly settings?: ServerSettings; readonly harness?: LiteLLMHarness } = {},
 ) => {
+  const settings = options.settings ?? DEFAULT_SERVER_SETTINGS;
   const driver = withLiteLLMLauncher(makeInnerDriver(created), {
-    harness: "claude",
+    harness: options.harness ?? "claude",
     configure: (config, launch) =>
       Effect.succeed({ ...config, binaryPath: launch.binaryPath, homePath: launch.homeDir }),
     homeEnvironment: (homeDir) => ({ FAKE_HOME: homeDir }),
@@ -331,8 +336,8 @@ const createLiteLLMInstance = (
             attachmentsDir: NodePath.join(fixture.dir, "attachments"),
           },
           settings: {
-            get: Effect.succeed(DEFAULT_SERVER_SETTINGS),
-            withSnapshot: (use) => use(DEFAULT_SERVER_SETTINGS),
+            get: Effect.succeed(settings),
+            withSnapshot: (use) => use(settings),
             changes: Stream.empty,
             subscribe: Effect.succeed(Stream.empty),
           },
@@ -528,7 +533,9 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
 
       sessionTags.length = 0;
       for (const runtimePolicy of [
-        { cwd: repository, requestTags: ["feature-x", "widgets"] },
+        { cwd: repository, requestTags: ["feature-x", "project:billing", "billing"] },
+        { cwd: repository },
+        { cwd: repository, requestTags: [] },
         { cwd: null },
       ])
         yield* adapter
@@ -537,7 +544,39 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
             runtimePolicy,
           } as unknown as ProviderAdapterV2OpenSessionInput)
           .pipe(Effect.scoped);
-      assert.deepEqual(sessionTags, ["widgets,feature-x", undefined]);
+      assert.deepEqual(sessionTags, [
+        "repo:widgets,project:feature-x,project:billing",
+        "repo:widgets,project:general-admin",
+        "repo:widgets,project:general-admin",
+        "project:general-admin",
+      ]);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("follows the default tag setting, which a live session must notice", () =>
+    Effect.gen(function* () {
+      using fixture = makeFixture();
+      signIn(fixture);
+      const tagsWith = (liteLLMDefaultRequestTag: ServerSettings["liteLLMDefaultRequestTag"]) =>
+        createLiteLLMInstance(fixture, [], {
+          settings: { ...DEFAULT_SERVER_SETTINGS, liteLLMDefaultRequestTag },
+        }).pipe(
+          Effect.flatMap(({ orchestrationAdapter }) =>
+            Effect.forEach([{ requestTags: [] }, { requestTags: ["billing"] }], (policy) =>
+              orchestrationAdapter.launchTags!({
+                cwd: null,
+                ...policy,
+              } as unknown as ProviderAdapterV2RuntimePolicy),
+            ),
+          ),
+        );
+      assert.deepEqual(yield* tagsWith({ mode: "custom", custom: "acme" }), [
+        "acme,project:general-admin",
+        "acme,project:billing",
+      ]);
+      assert.deepEqual(yield* tagsWith({ mode: "off", custom: "" }), ["", "project:billing"]);
+      const pi = yield* createLiteLLMInstance(fixture, [], { harness: "pi" });
+      assert.isUndefined(pi.orchestrationAdapter.launchTags);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 

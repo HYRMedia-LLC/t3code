@@ -3210,19 +3210,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.type === "thread.metadata.update" &&
       command.worktreePath !== undefined &&
       command.worktreePath !== thread.worktreePath;
-    // A harness process reads its request tags once, at spawn.
-    const requestTagsChanged =
-      command.type === "thread.metadata.update" &&
-      command.requestTags !== undefined &&
-      command.requestTags.join(",") !== (thread.requestTags ?? []).join(",");
     const needsProviderState =
       command.type === "thread.runtime-mode.set" ||
       command.type === "thread.model-selection.set" ||
       command.type === "provider.switch" ||
       command.type === "thread.archive" ||
       command.type === "thread.settle" ||
-      workspaceChanged ||
-      requestTagsChanged;
+      workspaceChanged;
     const providerContext = needsProviderState
       ? yield* projectionStore
           .getThreadProviderContext(
@@ -3988,7 +3982,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const detachSessionIds = new Set(
       command.type === "thread.archive" || command.type === "thread.settle"
         ? (providerContext?.providerSessions ?? []).map((session) => session.id)
-        : workspaceChanged || requestTagsChanged
+        : workspaceChanged
           ? (providerContext?.providerSessions ?? []).map((session) => session.id)
           : command.type === "thread.runtime-mode.set"
             ? (providerContext?.providerSessions ?? [])
@@ -4027,9 +4021,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     : command.type === "thread.settle"
                       ? "Thread settled."
                       : command.type === "thread.metadata.update"
-                        ? workspaceChanged
-                          ? "Workspace changed."
-                          : "Request tags changed."
+                        ? "Workspace changed."
                         : command.type === "thread.runtime-mode.set"
                           ? "Runtime mode changed."
                           : "Provider or model selection changed.",
@@ -4048,9 +4040,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     : command.type === "thread.settle"
                       ? "Thread settled."
                       : command.type === "thread.metadata.update"
-                        ? workspaceChanged
-                          ? "Workspace changed."
-                          : "Request tags changed."
+                        ? "Workspace changed."
                         : command.type === "thread.runtime-mode.set"
                           ? "Runtime mode changed."
                           : "Provider or model selection changed.",

@@ -671,5 +671,7 @@ export class ProviderAdapterV2 extends Context.Service<
      * from an older generation is replaced before its next turn.
      */
     readonly launchGeneration?: Effect.Effect<string | undefined>;
+    /** The request tags a session spawned for this policy would send, for those that send any. */
+    readonly launchTags?: (policy: ProviderAdapterV2RuntimePolicy) => Effect.Effect<string>;
   }
 >()("@t3tools/provider-core/server/ProviderAdapter/ProviderAdapterV2") {}

@@ -1176,7 +1176,7 @@ export const StorageCleanupSettings = Schema.Struct({
 });
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
-/** The tag every LiteLLM request carries: the project's repository name, custom text, or none. */
+/** The tag every LiteLLM request carries: `repo:<repository name>`, custom text, or none. */
 export const LiteLLMDefaultRequestTag = Schema.Struct({
   mode: Schema.Literals(["repo", "custom", "off"]),
   custom: Schema.String,
