@@ -145,7 +145,9 @@ no LiteLLM secret. Two consequences are easy to break:
   session manager replace an idle process before its next turn. A process shared by many
   threads is rarely idle, so a LiteLLM instance reports per-thread sessions even for Codex and
   OpenCode 2, and OpenCode's server owner starts a new server for a new generation while the
-  old one drains. A turn that fails on a gateway 401 before any side effect is sent again once
+  old one drains. Request tags follow the same rule: the session manager compares the adapter's
+  `launchTags` at each turn start, but never replaces a process that another thread is attached
+  to. A turn that fails on a gateway 401 before any side effect is sent again once
   ([ProviderAuthRetry.ts](../../apps/server/src/orchestration-v2/ProviderAuthRetry.ts)).
 - `lite` only injects gateway settings that the caller did not already set. A driver that passes
   its own provider config (OpenCode's `OPENCODE_CONFIG_CONTENT`, Codex `-c` after the

@@ -54,14 +54,16 @@ apply to every model.
 
 ## Request Tags
 
-T3 Code sends [request tags](https://docs.litellm.ai/docs/proxy/request_tags) with every
-LiteLLM Claude, Codex, and OpenCode request, so you can track spend by tag on the gateway.
+T3 Code sends [request tags](https://docs.litellm.ai/docs/proxy/request_tags) with LiteLLM
+Claude, Codex, and OpenCode agent turns, so you can track spend by tag on the gateway. Titles,
+commit messages, and other text generation do not carry tags.
 
 - By default, each request carries the repository name, for example `repo:t3code`, and
   `project:general-admin`. To use your own text instead of the repository name, or to turn both
   off, change **LiteLLM default request tag** in **Settings > Providers > Advanced**.
 - To set tags for one thread, use **Tags** in the composer, separated by commas. Each tag is sent
-  as `project:<tag>` and replaces `project:general-admin`. A change applies from the next message.
+  as `project:<tag>` and replaces `project:general-admin`. A change applies from the next message
+  after the thread's background work ends. A change to the default tag applies the same way.
 - Threads that a thread starts, such as delegated tasks, forks, and threads an agent creates,
   copy its tags. A scheduled task keeps the tags you set on it.
 
@@ -77,4 +79,7 @@ LiteLLM Pi does not send request tags yet.
 - LiteLLM Codex does not accept `-c` or `--config` in **Launch arguments**, because Codex
   would then skip the gateway.
 - LiteLLM OpenCode does not work with **Server URL**; T3 Code must start the OpenCode server.
+- LiteLLM OpenCode does not send request tags if you set `OPENCODE_CONFIG`.
+- A thread from before T3 Code 0.1.8 can share a LiteLLM Codex or OpenCode process with other
+  threads. It keeps the tags that process started with until the process stops.
 - The launcher is not available on Windows yet.

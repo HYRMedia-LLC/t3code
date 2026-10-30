@@ -662,6 +662,16 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
       orchestrationAdapter: {
         ...adapter,
         launchGeneration,
+        ...(spec.harness === "pi"
+          ? {}
+          : {
+              launchTags: (policy) =>
+                withRequestTags(policy).pipe(
+                  Effect.map(
+                    ({ launchEnvironment }) => launchEnvironment?.[LITELLM_REQUEST_TAGS_ENV] ?? "",
+                  ),
+                ),
+            }),
         // New threads get their own session, so a new thread never inherits an old
         // key or model list. Threads already on a shared session keep sharing it.
         getCapabilities: () => adapter.getCapabilities().pipe(Effect.map(perThreadSessions)),

@@ -65,8 +65,7 @@ const busyTurnKey = (providerThreadId: ProviderThreadId, runOrdinal: number) =>
   `${busyTurnPrefix(providerThreadId)}${runOrdinal}`;
 const UNLOAD_THREAD_TIMEOUT_MS = 10 * 1000;
 
-const requestTagsKey = (runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy) =>
-  (runtimePolicy.requestTags ?? []).join(",");
+const noLaunchTags = () => Effect.succeed("");
 const WORKING_RUN_STATUSES: ReadonlySet<string> = new Set([
   "preparing",
   "starting",
@@ -249,7 +248,10 @@ interface LiveSessionEntry {
   readonly launchGeneration: {
     readonly current: Effect.Effect<string | undefined>;
     readonly openedWith: string | undefined;
-    readonly openedRequestTags: string;
+    readonly tags: (
+      policy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+    ) => Effect.Effect<string>;
+    readonly openedTags: string;
   } | null;
 }
 
@@ -1224,23 +1226,29 @@ export const layerWithOptions = (
         return (yield* Ref.get(sessions)).get(key)?.runtime !== entry.runtime;
       });
 
-      // The process keeps the key, models and request tags it started with, so
-      // after any of them changes the next turn gets a fresh process (resumed
-      // from the stored session). Busy sessions and pending background work keep
-      // their process; a later turn replaces it.
+      // A process keeps the key, models and request tags it started with, so a change
+      // gives the next turn a fresh process, resumed from the stored session. Busy
+      // sessions and pending background work keep theirs until a later turn. Threads
+      // sharing a process can hold different tags, so tags never replace it under another.
       const replaceIfLaunchChanged = Effect.fn("ProviderSessionManager.replaceIfLaunchChanged")(
         function* (
           providerSessionId: ProviderSessionId,
           entry: LiveSessionEntry | undefined,
-          requestTags: string,
+          input: {
+            readonly threadId: ThreadId;
+            readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+          },
         ): Effect.fn.Return<LiveSessionEntry | undefined> {
           if (entry?.launchGeneration == null || entry.busyTurns.size > 0) return entry;
           const current = yield* entry.launchGeneration.current;
-          if (
-            requestTags === entry.launchGeneration.openedRequestTags &&
-            (current === undefined || current === entry.launchGeneration.openedWith)
-          )
-            return entry;
+          const generationChanged =
+            current !== undefined && current !== entry.launchGeneration.openedWith;
+          const ownsProcess = [...entry.attachedThreadIds].every((id) => id === input.threadId);
+          const tagsChanged =
+            ownsProcess &&
+            (yield* entry.launchGeneration.tags(input.runtimePolicy)) !==
+              entry.launchGeneration.openedTags;
+          if (!generationChanged && !tagsChanged) return entry;
           yield* releaseIfIdle({ providerSessionId, reason: "launch_changed" }).pipe(
             Effect.asVoid,
             logReleaseFailure(providerSessionId),
@@ -2202,7 +2210,7 @@ export const layerWithOptions = (
               const existing = yield* replaceIfLaunchChanged(
                 input.providerSessionId,
                 (yield* Ref.get(sessions)).get(key),
-                requestTagsKey(input.runtimePolicy),
+                input,
               );
               if (existing !== undefined) {
                 const attached = existing.attachedThreadIds.has(input.threadId);
@@ -2307,7 +2315,8 @@ export const layerWithOptions = (
                   : {
                       current: adapter.launchGeneration,
                       openedWith: yield* adapter.launchGeneration,
-                      openedRequestTags: requestTagsKey(input.runtimePolicy),
+                      tags: adapter.launchTags ?? noLaunchTags,
+                      openedTags: yield* (adapter.launchTags ?? noLaunchTags)(input.runtimePolicy),
                     };
               const entry: LiveSessionEntry = {
                 attachedThreadIds: new Set([input.threadId]),
