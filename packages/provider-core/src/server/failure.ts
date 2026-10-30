@@ -109,6 +109,7 @@ function curatedCauseMessages(cause: unknown): {
         case "ClaudeMcpRegistrationTimeoutError":
         case "CursorModelUnavailableError":
         case "LiteLLMGatewayError":
+        case "ProviderSetupError":
           return { known: stringField(cause, "message"), category: categoryMessage() };
         case "ContextHandoffDeliveryUncertainError":
           return {
