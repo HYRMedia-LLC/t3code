@@ -149,7 +149,7 @@ function LiteLLMDefaultRequestTagRow(props: {
   return (
     <SettingsRow
       title="LiteLLM default request tag"
-      description="Sent with every LiteLLM agent turn. Threads without tags also send project:general-admin. Off sends neither."
+      description="Sent with every LiteLLM agent turn. Threads without tags also send project:general-admin, and all threads send tool:T3-Code/<harness> unless they set a tool tag. Off sends none of these."
       control={
         <div
           inert={props.disabled}

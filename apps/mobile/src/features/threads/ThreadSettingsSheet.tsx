@@ -6,7 +6,13 @@ import { SheetHeader } from "../../components/ui/SheetHeader";
 import { Toolbar } from "../../components/ui/Toolbar";
 import * as Dialog from "../../components/ui/Dialog";
 import { createV5StackNavigator as createNativeStackNavigator } from "../../native/createV5StackNavigator";
-import { DEFAULT_SERVER_SETTINGS, parseLiteLLMRequestTags } from "@t3tools/contracts";
+import {
+  requestTagFieldRows,
+  requestTagFieldValues,
+  requestTagsFromFields,
+  sameRequestTags,
+} from "@t3tools/client-runtime/request-tag-fields";
+import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import {
   modelPreferencesMigrationPatch,
   resolveModelPreferences,
@@ -72,7 +78,7 @@ import {
   type ProviderGroup,
 } from "../../lib/modelOptions";
 import { applyProviderOptionSelection } from "../../lib/providerOptions";
-import { formatRequestTags, supportsRequestTags } from "../../lib/requestTags";
+import { supportsRequestTags } from "../../lib/requestTags";
 import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import {
@@ -264,41 +270,53 @@ function SwitchRow(props: {
   );
 }
 
-function TagsRow(props: {
+function TagsRows(props: {
   readonly tags: ReadonlyArray<string>;
+  readonly rows: ReturnType<typeof requestTagFieldRows>;
   readonly onChange: (tags: ReadonlyArray<string>) => void;
-  readonly isLast?: boolean;
 }) {
-  const [text, setText] = useState(() => formatRequestTags(props.tags));
+  const [fields, setFields] = useState(() => requestTagFieldValues(props.tags));
+  const { error } = requestTagsFromFields(props.tags, fields);
   const commit = () => {
-    const next = parseLiteLLMRequestTags(text);
-    setText(formatRequestTags(next));
-    if (formatRequestTags(next) !== formatRequestTags(props.tags)) props.onChange(next);
+    const next = requestTagsFromFields(props.tags, fields);
+    if (next.error) return;
+    setFields(requestTagFieldValues(next.tags));
+    if (!sameRequestTags(next.tags, props.tags)) props.onChange(next.tags);
   };
   return (
-    <View
-      className={cn(
-        "min-h-11 flex-row items-center gap-3 bg-grouped-card px-4 py-1 android:min-h-14",
-        !props.isLast && "border-b border-border-subtle",
-      )}
-    >
-      <Text className="text-sm font-t3-medium text-foreground">Tags</Text>
-      <TextInput
-        accessibilityLabel="Request tags"
-        autoCapitalize="none"
-        autoCorrect={false}
-        className="min-w-0 flex-1 py-2 text-right text-sm text-foreground"
-        onChangeText={setText}
-        onEndEditing={commit}
-        placeholder="Comma-separated"
-        placeholderTextColorClassName="accent-placeholder"
-        returnKeyType="done"
-        selectionColorClassName="accent-focus/32"
-        cursorColorClassName="accent-focus"
-        selectionHandleColorClassName="accent-focus"
-        value={text}
-      />
-    </View>
+    <>
+      {props.rows.map(({ key, label, placeholder }) => (
+        <View
+          key={key}
+          className="min-h-11 flex-row items-center gap-3 border-b border-border-subtle bg-grouped-card px-4 py-1 android:min-h-14"
+        >
+          <Text className="text-sm font-t3-medium text-foreground">{label}</Text>
+          <TextInput
+            accessibilityLabel={`${label} tag`}
+            autoCapitalize="none"
+            autoCorrect={false}
+            className="min-w-0 flex-1 py-2 text-right text-sm text-foreground"
+            onChangeText={(text) => setFields((current) => ({ ...current, [key]: text }))}
+            onEndEditing={commit}
+            placeholder={placeholder}
+            placeholderTextColorClassName="accent-placeholder"
+            returnKeyType="done"
+            selectionColorClassName="accent-focus/32"
+            cursorColorClassName="accent-focus"
+            selectionHandleColorClassName="accent-focus"
+            value={fields[key]}
+          />
+        </View>
+      ))}
+      {error ? (
+        <Text
+          accessibilityRole="alert"
+          className="border-b border-border-subtle bg-grouped-card px-4 py-2 text-sm text-destructive"
+        >
+          {error}
+        </Text>
+      ) : null}
+    </>
   );
 }
 
@@ -351,6 +369,7 @@ type ThreadSettingsSessionValue = {
   readonly runtimeModeChoices: ReturnType<typeof runtimeModeChoicesForSupportedModes>;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
   readonly requestTags: ThreadSettingsSessionProps["requestTags"];
+  readonly requestTagRows: ReturnType<typeof requestTagFieldRows>;
   readonly displayedDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
   readonly promptTraits: ReturnType<typeof getPromptControlledTraits>;
   readonly displayedModelSelection: ModelSelection | null;
@@ -667,6 +686,14 @@ function ThreadSettingsSessionProvider(
     )
       ? props.requestTags
       : undefined,
+    requestTagRows: requestTagFieldRows(
+      config?.providers.find(
+        (provider) =>
+          provider.instanceId ===
+          (displayedModel?.selection.instanceId ?? props.providerInstanceId),
+      )?.driver,
+      settings?.liteLLMDefaultRequestTag ?? DEFAULT_SERVER_SETTINGS.liteLLMDefaultRequestTag,
+    ),
     displayedDescriptors,
     promptTraits,
     displayedModelSelection: pendingModel?.selection ?? props.selectedModel,
@@ -945,7 +972,11 @@ function ThreadSettingsOptionsItem(props: {
         })}
         {session.requestTags ? (
           <Animated.View layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}>
-            <TagsRow tags={session.requestTags.value} onChange={session.requestTags.onChange} />
+            <TagsRows
+              tags={session.requestTags.value}
+              rows={session.requestTagRows}
+              onChange={session.requestTags.onChange}
+            />
           </Animated.View>
         ) : null}
         <Animated.View layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}>

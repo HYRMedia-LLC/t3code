@@ -2,6 +2,7 @@ import type { ChatComposerProps } from "./ChatComposer";
 import type { PromptUltrathink } from "./TraitsPicker";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { type AppModelOption } from "../../modelSelection";
+import type { UnifiedSettings } from "@t3tools/contracts/settings";
 import { CircleAlertIcon } from "lucide-react";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl } from "./ComposerControl";
@@ -90,7 +91,11 @@ export function ComposerControlsBar(props: {
   modelPickerIconClassName: string | undefined;
   getModelDisabledReason: ChatComposerProps["getModelDisabledReason"];
   /** Present only for LiteLLM instances that carry request tags. */
-  requestTags: { value: string; onCommit: (text: string) => void } | null;
+  requestTags: {
+    value: string;
+    defaultTag: UnifiedSettings["liteLLMDefaultRequestTag"];
+    onCommit: (text: string) => void;
+  } | null;
 }) {
   const {
     environmentId,
@@ -364,6 +369,8 @@ export function ComposerControlsBar(props: {
         {requestTags ? (
           <ComposerRequestTags
             value={requestTags.value}
+            driver={selectedProvider}
+            defaultTag={requestTags.defaultTag}
             size={composerControlsCollapsed ? "xs" : "sm"}
             onCommit={requestTags.onCommit}
           />

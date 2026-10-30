@@ -534,6 +534,7 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
       sessionTags.length = 0;
       for (const runtimePolicy of [
         { cwd: repository, requestTags: ["feature-x", "project:billing", "billing"] },
+        { cwd: repository, requestTags: ["jira:PROJ-1234", "env:dev", "tool:opencode"] },
         { cwd: repository },
         { cwd: repository, requestTags: [] },
         { cwd: null },
@@ -545,10 +546,11 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
           } as unknown as ProviderAdapterV2OpenSessionInput)
           .pipe(Effect.scoped);
       assert.deepEqual(sessionTags, [
-        "repo:widgets,project:feature-x,project:billing",
-        "repo:widgets,project:general-admin",
-        "repo:widgets,project:general-admin",
-        "project:general-admin",
+        "repo:widgets,project:feature-x,project:billing,tool:T3-Code/claude",
+        "repo:widgets,jira:PROJ-1234,env:dev,tool:opencode",
+        "repo:widgets,project:general-admin,tool:T3-Code/claude",
+        "repo:widgets,project:general-admin,tool:T3-Code/claude",
+        "project:general-admin,tool:T3-Code/claude",
       ]);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
@@ -571,8 +573,12 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
           ),
         );
       assert.deepEqual(yield* tagsWith({ mode: "custom", custom: "acme" }), [
-        "acme,project:general-admin",
-        "acme,project:billing",
+        "acme,project:general-admin,tool:T3-Code/claude",
+        "acme,project:billing,tool:T3-Code/claude",
+      ]);
+      assert.deepEqual(yield* tagsWith({ mode: "custom", custom: "tool:company" }), [
+        "tool:company,project:general-admin",
+        "tool:company,project:billing",
       ]);
       assert.deepEqual(yield* tagsWith({ mode: "off", custom: "" }), ["", "project:billing"]);
       const pi = yield* createLiteLLMInstance(fixture, [], { harness: "pi" });
