@@ -185,6 +185,7 @@ export const OpenCodeDriver: ProviderDriver<
     environment,
     enabled,
     config,
+    launchGeneration,
   }) {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const fileSystem = yield* FileSystem.FileSystem;
@@ -269,6 +270,7 @@ export const OpenCodeDriver: ProviderDriver<
       serverPassword: effectiveConfig.serverPassword,
       directory: host.paths.cwd,
       environment: processEnv,
+      ...(launchGeneration ? { launchGeneration } : {}),
     }).pipe(
       Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),
       Effect.provideService(
@@ -324,6 +326,7 @@ export const OpenCodeDriver: ProviderDriver<
       directory: host.paths.cwd,
       ...(effectiveConfig.serverPassword ? { serverPassword: effectiveConfig.serverPassword } : {}),
       environment: processEnv,
+      ...(launchGeneration ? { launchGeneration } : {}),
     });
     const textGeneration = selectOpenCodeRuntimeTextGeneration(
       runtimeProbe,
@@ -436,12 +439,13 @@ export const OpenCodeDriver: ProviderDriver<
       haveSettingsChanged: haveProviderSnapshotSettingsChanged,
       checkProviderOnSettingsChange: () => false,
       // A failed or still-loading catalog must recover without a manual
-      // refresh. Healthy instances need no recurring server starts.
+      // refresh. Healthy instances need no recurring server starts, except
+      // behind a launcher whose gateway can change the model list.
       refreshOnInterval: (snapshot) =>
         snapshot.enabled &&
         snapshot.installed &&
-        snapshot.status !== "ready" &&
-        snapshot.auth.status === "unknown",
+        (launchGeneration !== undefined ||
+          (snapshot.status !== "ready" && snapshot.auth.status === "unknown")),
       initialSnapshot: (settings) =>
         makePendingOpenCodeProvider(settings.provider).pipe(Effect.map(stampIdentity)),
       checkProvider,

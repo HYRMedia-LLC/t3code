@@ -140,9 +140,12 @@ no LiteLLM secret. Two consequences are easy to break:
 - Every CLI subcommand a driver spawns now goes through `lite`, which prints a routing line on
   stdout first and needs a signed-in key. Parsers must tolerate leading non-protocol text, and
   `--version` probes bypass `lite` in the shim.
-- A harness process keeps the key it started with, and the proxy's keys expire on their own.
-  The adapter's `credentialGeneration` lets the session manager replace an idle process after a
-  renewal, and a turn that fails on a gateway 401 before any side effect is sent again once
+- A harness process keeps the key and the model list `lite` gave it at spawn, and both change
+  under it. The adapter's `launchGeneration` (key expiry plus gateway model list) lets the
+  session manager replace an idle process before its next turn. A process shared by many
+  threads is rarely idle, so a LiteLLM instance reports per-thread sessions even for Codex and
+  OpenCode 2, and OpenCode's server owner starts a new server for a new generation while the
+  old one drains. A turn that fails on a gateway 401 before any side effect is sent again once
   ([ProviderAuthRetry.ts](../../apps/server/src/orchestration-v2/ProviderAuthRetry.ts)).
 - `lite` only injects gateway settings that the caller did not already set. A driver that passes
   its own provider config (OpenCode's `OPENCODE_CONFIG_CONTENT`, Codex `-c` after the

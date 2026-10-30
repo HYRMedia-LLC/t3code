@@ -28,9 +28,13 @@ You keep one LiteLLM sign-in per user account on the server. All LiteLLM instanc
 and signing in or out on one instance applies to all of them. `lite` renews the key on its own
 for up to 14 days; after that, sign in again.
 
-A running agent keeps the key it started with. After a renewal, T3 Code restarts the agent
+A running agent keeps the key and the model list it started with. Each new thread starts its
+own agent. After a renewal or a change to the gateway's models, T3 Code restarts an idle agent
 before its next message and resumes the conversation. If a key still expires during a turn,
 and that turn had not run any commands or edits yet, T3 Code sends your message again once.
+
+If `lite` can no longer renew the key (after 14 days, or if the gateway revoked it), the
+provider shows as signed out and your message is not sent. Sign in again, then send it again.
 
 If you sign in from another device and the final `localhost` page does not load, copy its
 full URL and paste it in T3 Code when it asks.
@@ -40,6 +44,10 @@ full URL and paste it in T3 Code when it asks.
 - **LiteLLM Claude** lists every model the gateway offers.
 - **LiteLLM Codex**, **LiteLLM OpenCode**, and **LiteLLM Pi** list the models that `lite`
   syncs into those harnesses.
+
+T3 Code checks the gateway's model list at most once a minute, and **Refresh** in
+**Settings > Providers** checks it now. If the gateway removes the model a thread uses, the
+model picker marks it unavailable and the next message fails until you select another model.
 
 The gateway translates between model families, so effort and thinking controls might not
 apply to every model.

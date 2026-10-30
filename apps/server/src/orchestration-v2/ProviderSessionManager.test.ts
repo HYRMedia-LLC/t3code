@@ -341,7 +341,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
     readonly beforeUnload?: Effect.Effect<void>;
     readonly spawnBeforeOpen?: boolean;
     readonly scopeCloseReached?: Deferred.Deferred<void>;
-    readonly credentialGeneration?: Effect.Effect<string | undefined>;
+    readonly launchGeneration?: Effect.Effect<string | undefined>;
   } = {},
 ) {
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
@@ -363,9 +363,9 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
     driver: CODEX_DRIVER,
     getCapabilities: () => Effect.succeed(options.capabilities ?? CodexCapabilities),
     planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" }),
-    ...(options.credentialGeneration === undefined
+    ...(options.launchGeneration === undefined
       ? {}
-      : { credentialGeneration: options.credentialGeneration }),
+      : { launchGeneration: options.launchGeneration }),
     openSession: (input) =>
       Effect.gen(function* () {
         if (options.spawnBeforeOpen === true) {
@@ -492,7 +492,7 @@ function layerTest(input: {
   readonly beforeUnload?: Effect.Effect<void>;
   readonly spawnBeforeOpen?: boolean;
   readonly scopeCloseReached?: Deferred.Deferred<void>;
-  readonly credentialGeneration?: Effect.Effect<string | undefined>;
+  readonly launchGeneration?: Effect.Effect<string | undefined>;
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
   readonly projectServiceLayer?: Layer.Layer<ProjectService.ProjectService>;
 }) {
@@ -530,9 +530,7 @@ function layerTest(input: {
       ...(input.scopeCloseReached === undefined
         ? {}
         : { scopeCloseReached: input.scopeCloseReached }),
-      ...(input.credentialGeneration === undefined
-        ? {}
-        : { credentialGeneration: input.credentialGeneration }),
+      ...(input.launchGeneration === undefined ? {} : { launchGeneration: input.launchGeneration }),
     }).pipe(Effect.map(ProviderAdapterRegistry.layerSingle)),
   );
   const layerConfiguredMcpRegistry =
@@ -1013,7 +1011,7 @@ it.effect("ProviderSessionManagerV2 replaces an idle session after its key is re
 
     yield* effect.pipe(
       Effect.provide(
-        layerTest({ state, idleTimeoutMs: 60_000, credentialGeneration: Ref.get(generation) }),
+        layerTest({ state, idleTimeoutMs: 60_000, launchGeneration: Ref.get(generation) }),
       ),
     );
   }),

@@ -645,10 +645,10 @@ export class ProviderAdapterV2 extends Context.Service<
       input: ProviderAdapterV2OpenSessionInput,
     ) => Effect.Effect<ProviderAdapterV2SessionRuntime, ProviderAdapterV2Error, Scope.Scope>;
     /**
-     * Identifies the credential a newly spawned session would start with, for
-     * providers whose sessions keep the key they started with. An idle session
+     * Identifies what a newly spawned session would start with (key, model
+     * list), for providers whose sessions keep it for life. An idle session
      * from an older generation is replaced before its next turn.
      */
-    readonly credentialGeneration?: Effect.Effect<string | undefined>;
+    readonly launchGeneration?: Effect.Effect<string | undefined>;
   }
 >()("@t3tools/provider-core/server/ProviderAdapter/ProviderAdapterV2") {}

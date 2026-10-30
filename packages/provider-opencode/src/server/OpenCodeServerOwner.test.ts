@@ -206,3 +206,42 @@ it.effect("cleans up an interrupted startup and allows a retry", () =>
     ).pipe(Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, runtime));
   }),
 );
+
+it.effect("starts a new server for a new launch generation and drains the old one", () =>
+  Effect.gen(function* () {
+    const testRuntime = yield* makeRuntime;
+    const generation = yield* Ref.make("key-1");
+    const releaseOld = yield* Deferred.make<void>();
+    const oldBorrowed = yield* Deferred.make<void>();
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const owner = yield* OpenCodeServerOwner.make({
+          binaryPath: "opencode",
+          directory: "/project",
+          launchGeneration: Ref.get(generation),
+        });
+        const oldUse = yield* owner
+          .withServer((server) =>
+            Deferred.succeed(oldBorrowed, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseOld)),
+              Effect.as(server.url),
+            ),
+          )
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(oldBorrowed);
+
+        yield* Ref.set(generation, "key-2");
+        const fresh = yield* owner.withServer((server) => Effect.succeed(server.url));
+        expect(fresh).toBe("http://127.0.0.1:2");
+        expect(yield* Ref.get(testRuntime.closes)).toBe(0);
+
+        yield* Deferred.succeed(releaseOld, undefined);
+        expect(yield* Fiber.join(oldUse)).toBe("http://127.0.0.1:1");
+        expect(yield* Ref.get(testRuntime.closes)).toBe(1);
+        expect(yield* owner.withServer((server) => Effect.succeed(server.url))).toBe(
+          "http://127.0.0.1:2",
+        );
+      }),
+    ).pipe(Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, testRuntime.runtime));
+  }).pipe(Effect.provide(TestClock.layer())),
+);

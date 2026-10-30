@@ -115,6 +115,7 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
   readonly serverPassword: string;
   readonly directory: string;
   readonly environment: NodeJS.ProcessEnv;
+  readonly launchGeneration?: Effect.Effect<string | undefined>;
 }) {
   const opencode = yield* OpenCode2Client.OpenCode2Client;
   const connectTo = Effect.fn("OpenCode2Server.connectTo")(function* (
@@ -153,6 +154,7 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
     directory: input.directory,
     environment: serverEnvironment(input.environment, password),
     verify: (url) => connectTo(url, password, false).pipe(Effect.flatMap(remember)),
+    ...(input.launchGeneration ? { launchGeneration: input.launchGeneration } : {}),
   });
   return OpenCode2Server.of({
     withConnection: Effect.fn("OpenCode2Server.withConnection")(function (use) {

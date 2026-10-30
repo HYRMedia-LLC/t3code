@@ -100,6 +100,8 @@ export interface ProviderDriverCreateInput<Config> {
   readonly environment: ProviderInstanceEnvironment;
   readonly enabled: boolean;
   readonly config: Config;
+  /** Set by a launcher whose processes keep their startup key and models; see `ProviderAdapterV2.launchGeneration`. */
+  readonly launchGeneration?: Effect.Effect<string | undefined>;
 }
 
 /** create calls with different instanceId/config must share no mutable state. */

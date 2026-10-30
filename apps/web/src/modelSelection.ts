@@ -67,14 +67,28 @@ export interface AppModelOption {
   isUnavailable?: boolean;
 }
 
+// These catalogs can drop a model, so the composer shows it as unavailable instead of switching silently.
+function hasDynamicCatalog(
+  settings: UnifiedSettings,
+  instanceId: ProviderInstanceId,
+  provider: ProviderDriverKind,
+): boolean {
+  return (
+    provider === "opencode" ||
+    provider === "antigravity" ||
+    settings.providerInstances?.[instanceId]?.launcher === "litellm"
+  );
+}
+
 function appendUnavailableDynamicModelSelection(
   options: AppModelOption[],
   rawModels: ReadonlyArray<ServerProvider["models"][number]>,
   provider: ProviderDriverKind,
+  dynamicCatalog: boolean,
   selectedModel: string | null | undefined,
   hiddenModels: ReadonlyArray<string>,
 ): AppModelOption[] {
-  if (provider !== "opencode" && provider !== "antigravity") return options;
+  if (!dynamicCatalog) return options;
   const slug = normalizeCustomModelSlug(selectedModel);
   if (!slug) return options;
   if (provider === "antigravity" && slug === ANTIGRAVITY_DEFAULT_MODEL) return options;
@@ -194,6 +208,7 @@ function getAppModelOptions(
     applyInstanceModelPreferences(options, preferences),
     rawModels,
     provider,
+    hasDynamicCatalog(settings, defaultInstanceId, provider),
     selectedModel,
     preferences.hiddenModels,
   );
@@ -235,6 +250,7 @@ export function getAppModelOptionsForInstance(
     applyInstanceModelPreferences(options, preferences),
     entry.models,
     entry.driverKind,
+    hasDynamicCatalog(settings, entry.instanceId, entry.driverKind),
     selectedModel,
     preferences.hiddenModels,
   );
@@ -276,7 +292,7 @@ export function resolveAppModelSelectionForInstance(
   }
   if (
     resolutionOptions?.preserveUnavailableSelection &&
-    (entry.driverKind === "opencode" || entry.driverKind === "antigravity")
+    hasDynamicCatalog(settings, entry.instanceId, entry.driverKind)
   ) {
     const unavailableSelection = normalizeCustomModelSlug(selectedModel);
     const hiddenModels = readInstanceModelPreferences(settings, entry.instanceId).hiddenModels;

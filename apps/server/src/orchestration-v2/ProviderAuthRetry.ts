@@ -19,8 +19,9 @@ const RETRY_MESSAGE_PREFIX = "message:auth-retry:";
 const AUTH_REJECTION_CODES = new Set(["api_error_401", "api_error_403"]);
 // Codex, OpenCode and Pi only pass the gateway's text through. LiteLLM answers an
 // expired or revoked key with "Authentication Error, ..." and HTTP 401.
+// A bare 401 or "unauthorized" is too common in tool output to count.
 const AUTH_REJECTION_TEXT =
-  /\b(401|403)\b|unauthori[sz]ed|authentication error|invalid proxy server token|token expired/i;
+  /\bstatus(?:\s*code)?\b\W{0,3}40[13]\b|\b40[13]\s+(?:unauthori[sz]ed|forbidden)\b|authentication error|invalid proxy server token|token expired/i;
 
 export const isGatewayAuthRejection = (failure: OrchestrationV2ProviderFailure): boolean =>
   (failure.code !== null && AUTH_REJECTION_CODES.has(failure.code)) ||
