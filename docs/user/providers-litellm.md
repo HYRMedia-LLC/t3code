@@ -57,11 +57,11 @@ apply to every model.
 T3 Code sends [request tags](https://docs.litellm.ai/docs/proxy/request_tags) with every
 LiteLLM Claude, Codex, and OpenCode request, so you can track spend by tag on the gateway.
 
-- By default, each request carries the repository name, for example `t3code`. To use your own
-  text or no default tag, change **LiteLLM default request tag** in
-  **Settings > Providers > Advanced**.
-- To add tags to one thread, use **Tags** in the composer, separated by commas. A change applies
-  from the next message.
+- By default, each request carries the repository name, for example `repo:t3code`, and
+  `project:general-admin`. To use your own text instead of the repository name, or to turn both
+  off, change **LiteLLM default request tag** in **Settings > Providers > Advanced**.
+- To set tags for one thread, use **Tags** in the composer, separated by commas. Each tag is sent
+  as `project:<tag>` and replaces `project:general-admin`. A change applies from the next message.
 - Threads that a thread starts, such as delegated tasks, forks, and threads an agent creates,
   copy its tags. A scheduled task keeps the tags you set on it.
 

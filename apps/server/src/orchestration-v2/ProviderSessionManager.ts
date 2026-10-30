@@ -64,6 +64,9 @@ const busyTurnPrefix = (providerThreadId: ProviderThreadId) => `${providerThread
 const busyTurnKey = (providerThreadId: ProviderThreadId, runOrdinal: number) =>
   `${busyTurnPrefix(providerThreadId)}${runOrdinal}`;
 const UNLOAD_THREAD_TIMEOUT_MS = 10 * 1000;
+
+const requestTagsKey = (runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy) =>
+  (runtimePolicy.requestTags ?? []).join(",");
 const WORKING_RUN_STATUSES: ReadonlySet<string> = new Set([
   "preparing",
   "starting",
@@ -246,6 +249,7 @@ interface LiveSessionEntry {
   readonly launchGeneration: {
     readonly current: Effect.Effect<string | undefined>;
     readonly openedWith: string | undefined;
+    readonly openedRequestTags: string;
   } | null;
 }
 
@@ -1220,18 +1224,23 @@ export const layerWithOptions = (
         return (yield* Ref.get(sessions)).get(key)?.runtime !== entry.runtime;
       });
 
-      // The process keeps the key and models it started with, so after a renewal
-      // or a model list change the next turn gets a fresh process (resumed from
-      // the stored session). Busy sessions and pending background work keep
+      // The process keeps the key, models and request tags it started with, so
+      // after any of them changes the next turn gets a fresh process (resumed
+      // from the stored session). Busy sessions and pending background work keep
       // their process; a later turn replaces it.
       const replaceIfLaunchChanged = Effect.fn("ProviderSessionManager.replaceIfLaunchChanged")(
         function* (
           providerSessionId: ProviderSessionId,
           entry: LiveSessionEntry | undefined,
+          requestTags: string,
         ): Effect.fn.Return<LiveSessionEntry | undefined> {
           if (entry?.launchGeneration == null || entry.busyTurns.size > 0) return entry;
           const current = yield* entry.launchGeneration.current;
-          if (current === undefined || current === entry.launchGeneration.openedWith) return entry;
+          if (
+            requestTags === entry.launchGeneration.openedRequestTags &&
+            (current === undefined || current === entry.launchGeneration.openedWith)
+          )
+            return entry;
           yield* releaseIfIdle({ providerSessionId, reason: "launch_changed" }).pipe(
             Effect.asVoid,
             logReleaseFailure(providerSessionId),
@@ -2193,6 +2202,7 @@ export const layerWithOptions = (
               const existing = yield* replaceIfLaunchChanged(
                 input.providerSessionId,
                 (yield* Ref.get(sessions)).get(key),
+                requestTagsKey(input.runtimePolicy),
               );
               if (existing !== undefined) {
                 const attached = existing.attachedThreadIds.has(input.threadId);
@@ -2297,6 +2307,7 @@ export const layerWithOptions = (
                   : {
                       current: adapter.launchGeneration,
                       openedWith: yield* adapter.launchGeneration,
+                      openedRequestTags: requestTagsKey(input.runtimePolicy),
                     };
               const entry: LiveSessionEntry = {
                 attachedThreadIds: new Set([input.threadId]),

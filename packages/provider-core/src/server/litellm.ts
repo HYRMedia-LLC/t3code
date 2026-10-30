@@ -102,6 +102,8 @@ export const liteLLMShimScript = (harness: LiteLLMHarness): string =>
 
 /** T3 sets this per session; the shim turns it into the harness's own header setting. */
 const LITELLM_REQUEST_TAGS_ENV = "LITELLM_REQUEST_TAGS";
+const PROJECT_TAG_PREFIX = "project:";
+const DEFAULT_PROJECT_TAG = `${PROJECT_TAG_PREFIX}general-admin`;
 const TAGS_SET = `[ -n "\${${LITELLM_REQUEST_TAGS_ENV}-}" ]`;
 
 /**
@@ -615,9 +617,14 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
         setting.mode === "custom"
           ? parseLiteLLMRequestTags(setting.custom)
           : setting.mode === "repo" && policy.cwd !== null
-            ? [yield* repositoryTag(policy.cwd)]
+            ? [`repo:${yield* repositoryTag(policy.cwd)}`]
             : [];
-      const tags = [...new Set([...defaultTags, ...(policy.requestTags ?? [])])];
+      const threadTags = (policy.requestTags ?? []).map((tag) =>
+        tag.startsWith(PROJECT_TAG_PREFIX) ? tag : `${PROJECT_TAG_PREFIX}${tag}`,
+      );
+      const projectTags =
+        threadTags.length === 0 && setting.mode !== "off" ? [DEFAULT_PROJECT_TAG] : threadTags;
+      const tags = [...new Set([...defaultTags, ...projectTags])];
       return tags.length === 0
         ? policy
         : {

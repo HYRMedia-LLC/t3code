@@ -136,7 +136,7 @@ import {
 } from "./ProviderSettingsPanel.logic";
 
 const LITELLM_DEFAULT_TAG_MODES = [
-  { value: "repo", label: "Repository name" },
+  { value: "repo", label: "Repository name (repo:name)" },
   { value: "custom", label: "Custom" },
   { value: "off", label: "Off" },
 ] as const;
@@ -149,7 +149,7 @@ function LiteLLMDefaultRequestTagRow(props: {
   return (
     <SettingsRow
       title="LiteLLM default request tag"
-      description="Sent with every LiteLLM request, before the thread's own tags."
+      description="Sent with every LiteLLM request. Threads without tags also send project:general-admin. Off sends neither."
       control={
         <div
           inert={props.disabled}

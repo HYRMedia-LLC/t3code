@@ -67,7 +67,7 @@ export const ComposerRequestTags = memo(function ComposerRequestTags(props: {
             }}
           />
           <p className="text-muted-foreground text-xs">
-            Sent to LiteLLM with this thread's requests.
+            Sent to LiteLLM as project:tag, in place of project:general-admin.
           </p>
         </div>
       </PopoverPopup>

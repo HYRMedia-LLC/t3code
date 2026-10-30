@@ -528,7 +528,9 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
 
       sessionTags.length = 0;
       for (const runtimePolicy of [
-        { cwd: repository, requestTags: ["feature-x", "widgets"] },
+        { cwd: repository, requestTags: ["feature-x", "project:billing", "billing"] },
+        { cwd: repository },
+        { cwd: repository, requestTags: [] },
         { cwd: null },
       ])
         yield* adapter
@@ -537,7 +539,12 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
             runtimePolicy,
           } as unknown as ProviderAdapterV2OpenSessionInput)
           .pipe(Effect.scoped);
-      assert.deepEqual(sessionTags, ["widgets,feature-x", undefined]);
+      assert.deepEqual(sessionTags, [
+        "repo:widgets,project:feature-x,project:billing",
+        "repo:widgets,project:general-admin",
+        "repo:widgets,project:general-admin",
+        "project:general-admin",
+      ]);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 

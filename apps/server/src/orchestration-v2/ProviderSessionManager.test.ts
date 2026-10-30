@@ -1010,6 +1010,22 @@ it.effect("ProviderSessionManagerV2 replaces an idle session after its key is re
         [(yield* Ref.get(state)).openCount, (yield* Ref.get(state)).closeCount],
         [2, 1],
       );
+
+      // The process reads its request tags at spawn, so an edit needs a new one.
+      const openTagged = (requestTags: ReadonlyArray<string>) =>
+        manager.open({
+          threadId,
+          providerSessionId,
+          modelSelection,
+          runtimePolicy: { ...runtimePolicy, requestTags },
+        });
+      const tagged = yield* openTagged(["feature-x"]);
+      assert.notStrictEqual(tagged, second);
+      assert.strictEqual(yield* openTagged(["feature-x"]), tagged);
+      assert.deepEqual(
+        [(yield* Ref.get(state)).openCount, (yield* Ref.get(state)).closeCount],
+        [3, 2],
+      );
     });
 
     yield* effect.pipe(
