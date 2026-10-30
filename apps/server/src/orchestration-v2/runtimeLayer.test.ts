@@ -2123,6 +2123,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         interactionMode: "default" as const,
         branch: null,
         worktreePath: null,
+        requestTags: ["acme"],
       };
 
       const firstCreate = yield* orchestrator.dispatch(create);
@@ -2138,6 +2139,20 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         branch: "feature/v2",
         worktreePath: "/tmp/t3-v2-worktree",
       });
+      assert.deepEqual((yield* orchestrator.getThreadProjection(threadId)).thread.requestTags, [
+        "acme",
+      ]);
+      yield* orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make("runtime-layer-lifecycle-request-tags"),
+        threadId,
+        requestTags: ["acme", "feature-x"],
+      });
+      assert.deepEqual(
+        (yield* orchestrator.getShellSnapshot()).threads.find((thread) => thread.id === threadId)
+          ?.requestTags,
+        ["acme", "feature-x"],
+      );
       const staleWorkspaceUpdate = yield* orchestrator
         .dispatch({
           type: "thread.metadata.update",

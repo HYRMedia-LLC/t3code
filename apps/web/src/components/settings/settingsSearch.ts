@@ -814,6 +814,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     providerSettingsOnly: true,
   },
   {
+    id: "litellm-default-request-tag",
+    title: "LiteLLM default request tag",
+    to: "/settings/providers",
+    searchTerms: ["litellm gateway request tags spend tracking repository custom off"],
+    providerSettingsOnly: true,
+  },
+  {
     id: "agent-browser-access",
     title: "Agent browser access",
     to: "/settings/browser",

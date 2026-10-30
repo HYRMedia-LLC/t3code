@@ -721,6 +721,25 @@ describe("composerDraftStore context persistence", () => {
       expect(draft?.previewAnnotations).toEqual([annotation]);
     }
   });
+
+  it("keeps request tags alone in a draft across persistence and drops them when cleared", () => {
+    const store = useComposerDraftStore.getState();
+    const merge = useComposerDraftStore.persist.getOptions().merge!;
+    store.setRequestTags(threadRef, "billing, nightly");
+
+    const reloaded = merge(
+      JSON.parse(
+        JSON.stringify(partializeComposerDraftStoreState(useComposerDraftStore.getState())),
+      ),
+      useComposerDraftStore.getInitialState(),
+    );
+    expect(reloaded.draftsByThreadKey[scopedThreadKey(threadRef)]?.requestTags).toBe(
+      "billing, nightly",
+    );
+
+    store.setRequestTags(threadRef, "");
+    expect(draftByKey(scopedThreadKey(threadRef))).toBeUndefined();
+  });
 });
 
 describe("composerDraftStore thread contexts", () => {

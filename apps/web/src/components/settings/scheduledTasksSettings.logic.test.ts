@@ -17,6 +17,7 @@ import { resolveSettingsScope, type SettingsScopeSearch } from "./settingsScope"
 
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import {
+  draftRequestTags,
   scheduledTaskDefaultModel,
   matchesScheduledTaskScope,
   scheduleFromDraft,
@@ -132,6 +133,7 @@ const legacyTask: ScheduledTask = {
   modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
   runtimeMode: "full-access",
   interactionMode: "default",
+  requestTags: [],
   createdBy: "user",
   creationSource: "web",
   createdAt: "2026-09-17T00:00:00.000Z",
@@ -148,6 +150,16 @@ describe("editing scheduled task branch settings", () => {
     const draft = taskToDraft(legacyTask);
     expect(draft.baseRef).toBe("release");
     expect(draft.startFromOrigin).toBe(false);
+  });
+
+  it("round-trips request tags and drops them for unsupported providers", () => {
+    const draft = taskToDraft({ ...legacyTask, requestTags: ["billing", "nightly"] });
+    expect(draft.requestTags).toBe("billing, nightly");
+    expect(draftRequestTags({ requestTags: " billing,, nightly, billing " }, true)).toEqual([
+      "billing",
+      "nightly",
+    ]);
+    expect(draftRequestTags(draft, false)).toEqual([]);
   });
 });
 

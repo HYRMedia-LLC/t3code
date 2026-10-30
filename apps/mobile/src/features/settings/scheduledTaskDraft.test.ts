@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   DEFAULT_SERVER_SETTINGS,
+  type ScheduledTask,
   type ServerConfig,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -8,7 +9,10 @@ import {
 } from "@t3tools/contracts";
 import {
   scheduledTaskDefaultModel,
+  createDraft,
   DEFAULT_SCHEDULE,
+  editDraft,
+  hasScheduledTaskDraftChanges,
   scheduleDraftForTask,
   scheduleFromDraft,
 } from "./scheduledTaskDraft";
@@ -79,6 +83,20 @@ describe("scheduleDraftForTask", () => {
     expect(
       scheduleFromDraft({ ...draft, filters: [{ id: "f1", path: "", op: "exists", value: "" }] }),
     ).toBeNull();
+  });
+});
+
+describe("request tags", () => {
+  it("loads from the task and counts as a draft change", () => {
+    const initial = { ...createDraft(null, null), requestTags: ["team-a"] };
+    const task = {
+      schedule: { type: "interval", everyMs: 60_000 },
+      workspaceStrategy: { type: "root" },
+      requestTags: ["x"],
+    } as unknown as ScheduledTask;
+    expect(editDraft(task).requestTags).toEqual(["x"]);
+    expect(hasScheduledTaskDraftChanges(initial, { ...initial })).toBe(false);
+    expect(hasScheduledTaskDraftChanges(initial, { ...initial, requestTags: [] })).toBe(true);
   });
 });
 

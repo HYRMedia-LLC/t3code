@@ -658,14 +658,17 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
   const mcpServerNameFor = (threadId: string) =>
     t3McpServerName(threadId).pipe(Effect.provideService(Crypto.Crypto, crypto));
 
-  const borrow = Effect.gen(function* () {
+  const borrow = Effect.fnUntraced(function* (
+    runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+  ) {
     const lent = yield* Deferred.make<
       OpenCode2Server.OpenCode2Connection,
       OpenCodeRuntime.OpenCodeRuntimeError
     >();
     yield* server
-      .withConnection((connection) =>
-        Deferred.succeed(lent, connection).pipe(Effect.andThen(Effect.never)),
+      .withConnection(
+        (connection) => Deferred.succeed(lent, connection).pipe(Effect.andThen(Effect.never)),
+        runtimePolicy.launchEnvironment,
       )
       .pipe(
         Effect.catch((error) => Deferred.fail(lent, error)),
@@ -2618,7 +2621,9 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       // Release the borrow on every failure, including reconnect interruption, so spawned servers can idle-stop.
       const scope = yield* Scope.make();
       const { next, stream } = yield* Effect.gen(function* () {
-        const next = yield* borrow.pipe(Effect.provideService(Scope.Scope, scope));
+        const next = yield* borrow(input.runtimePolicy).pipe(
+          Effect.provideService(Scope.Scope, scope),
+        );
         return { next, stream: yield* next.events };
       }).pipe(Effect.onError(() => Scope.close(scope, Exit.void)));
       const previous = currentScope;
@@ -4046,7 +4051,9 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       function* (input) {
         const scope = yield* Scope.make();
         yield* Effect.addFinalizer((exit) => Scope.close(scope, exit));
-        const connection = yield* borrow.pipe(Effect.provideService(Scope.Scope, scope));
+        const connection = yield* borrow(input.runtimePolicy).pipe(
+          Effect.provideService(Scope.Scope, scope),
+        );
         return yield* openSession(input, { connection, scope });
       },
       (effect, input) =>

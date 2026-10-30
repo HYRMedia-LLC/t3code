@@ -175,6 +175,9 @@ const decodeWorkspaceStrategyJson = Schema.decodeUnknownEffect(
 const decodeModelSelectionJson = Schema.decodeUnknownEffect(
   Schema.fromJsonString(ScheduledTask.fields.modelSelection),
 );
+const decodeRequestTagsJson = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(ScheduledTask.fields.requestTags),
+);
 const HeadersJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String));
 const MissingFieldsJson = Schema.fromJsonString(Schema.Array(Schema.String));
 const decodeHeadersJson = Schema.decodeUnknownOption(HeadersJson);
@@ -194,6 +197,7 @@ interface ScheduledTaskRow {
   readonly model_selection_json: string;
   readonly runtime_mode: string;
   readonly interaction_mode: string;
+  readonly request_tags_json: string;
   readonly created_by: string;
   readonly creation_source: string;
   readonly created_at: string;
@@ -339,6 +343,7 @@ const decodeRow = Effect.fnUntraced(
       modelSelection,
       runtimeMode: row.runtime_mode,
       interactionMode: row.interaction_mode,
+      requestTags: yield* decodeRequestTagsJson(row.request_tags_json),
       createdBy: row.created_by,
       creationSource: row.creation_source,
       createdAt: row.created_at,
@@ -442,6 +447,7 @@ export const layer = Layer.effect(
         model_selection_json,
         runtime_mode,
         interaction_mode,
+        request_tags_json,
         created_by,
         creation_source,
         created_at,
@@ -479,6 +485,7 @@ export const layer = Layer.effect(
         model_selection_json,
         runtime_mode,
         interaction_mode,
+        request_tags_json,
         created_by,
         creation_source,
         created_at,
@@ -554,6 +561,7 @@ export const layer = Layer.effect(
           model_selection_json,
           runtime_mode,
           interaction_mode,
+          request_tags_json,
           created_by,
           creation_source,
           created_at,
@@ -578,6 +586,7 @@ export const layer = Layer.effect(
           ${JSON.stringify(task.modelSelection)},
           ${task.runtimeMode},
           ${task.interactionMode},
+          ${JSON.stringify(task.requestTags)},
           ${task.createdBy},
           ${task.creationSource},
           ${task.createdAt},
@@ -603,6 +612,7 @@ export const layer = Layer.effect(
           model_selection_json = excluded.model_selection_json,
           runtime_mode = excluded.runtime_mode,
           interaction_mode = excluded.interaction_mode,
+          request_tags_json = excluded.request_tags_json,
           creation_source = excluded.creation_source,
           updated_at = excluded.updated_at,
           next_run_at = excluded.next_run_at,
@@ -862,6 +872,7 @@ export const layer = Layer.effect(
                     modelSelection: active.modelSelection,
                     runtimeMode: active.runtimeMode,
                     interactionMode: active.interactionMode,
+                    requestTags: active.requestTags,
                     workspaceStrategy: active.workspaceStrategy,
                     initialMessage: {
                       messageId,
@@ -1179,6 +1190,7 @@ export const layer = Layer.effect(
         modelSelection: input.modelSelection,
         runtimeMode: input.runtimeMode,
         interactionMode: input.interactionMode,
+        requestTags: input.requestTags ?? existingTask?.requestTags ?? [],
         createdBy: existingTask?.createdBy ?? input.createdBy ?? "user",
         creationSource: input.creationSource ?? "web",
         createdAt: existingTask?.createdAt ?? iso(now),

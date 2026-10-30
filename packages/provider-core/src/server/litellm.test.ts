@@ -173,7 +173,7 @@ case "$1" in
     echo "Opening browser to: https://gw.example/authorize?redirect_uri=http%3A%2F%2F127.0.0.1%3A5123%2Fcallback"
     touch "$FAKE_LITE_DIR/signed-in" ;;
   logout) rm -f "$FAKE_LITE_DIR/signed-in" ;;
-  *) echo "litellm: routing through proxy"; echo "lite-ran $* OPENCODE_CONFIG_CONTENT=\${OPENCODE_CONFIG_CONTENT-unset}" ;;
+  *) echo "litellm: routing through proxy"; echo "lite-ran $* OPENCODE_CONFIG_CONTENT=\${OPENCODE_CONFIG_CONTENT-unset} OPENCODE_CONFIG=\${OPENCODE_CONFIG-unset} HEADERS=\${ANTHROPIC_CUSTOM_HEADERS-unset}" ;;
 esac
 `;
 
@@ -212,6 +212,7 @@ interface FakeConfig {
 
 const titleModels: Array<string> = [];
 const startedTurns: Array<string> = [];
+const sessionTags: Array<string | undefined> = [];
 
 const sharedCapabilities = {
   sessions: { supportsMultipleProviderThreadsPerSession: true },
@@ -222,12 +223,16 @@ const fakeAdapter = {
   driver: ProviderDriverKind.make("claudeAgent"),
   getCapabilities: () => Effect.succeed(sharedCapabilities),
   openSession: (input: ProviderAdapterV2OpenSessionInput) =>
-    Effect.succeed({
-      providerSessionId: input.providerSessionId,
-      providerSession: { capabilities: sharedCapabilities },
-      startTurn: (turn: ProviderAdapterV2TurnInput) =>
-        Effect.sync(() => void startedTurns.push(turn.modelSelection.model)),
-    } as unknown as ProviderAdapterV2SessionRuntime),
+    Effect.sync(
+      () => void sessionTags.push(input.runtimePolicy.launchEnvironment?.LITELLM_REQUEST_TAGS),
+    ).pipe(
+      Effect.as({
+        providerSessionId: input.providerSessionId,
+        providerSession: { capabilities: sharedCapabilities },
+        startTurn: (turn: ProviderAdapterV2TurnInput) =>
+          Effect.sync(() => void startedTurns.push(turn.modelSelection.model)),
+      } as unknown as ProviderAdapterV2SessionRuntime),
+    ),
 } as unknown as ProviderInstance["orchestrationAdapter"];
 
 const signIn = (fixture: ReturnType<typeof makeFixture>) =>
@@ -479,7 +484,8 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
       const adapter = instance.orchestrationAdapter;
       const sessionInput = {
         providerSessionId: ProviderSessionId.make("session:litellm"),
-      } as ProviderAdapterV2OpenSessionInput;
+        runtimePolicy: { cwd: null },
+      } as unknown as ProviderAdapterV2OpenSessionInput;
       const signedOut = yield* adapter.openSession(sessionInput).pipe(Effect.scoped, Effect.flip);
       assert.include(knownProviderFailureMessage(signedOut) ?? "", "Sign in again");
 
@@ -493,6 +499,7 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
         ({
           threadId: "thread:1",
           runId: "run:1",
+          runtimePolicy: { cwd: null },
           modelSelection: { instanceId, model },
           providerThread: { id: "provider-thread:1" },
         }) as unknown as ProviderAdapterV2TurnInput;
@@ -504,6 +511,61 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
         "no longer serves claude-sonnet-4-5",
       );
       assert.deepEqual(startedTurns, ["gpt-5"]);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("tags each session with the repository and the thread's own tags", () =>
+    Effect.gen(function* () {
+      using fixture = makeFixture();
+      signIn(fixture);
+      const repository = NodePath.join(fixture.dir, "checkout");
+      NodeFS.mkdirSync(repository);
+      const git = (args: ReadonlyArray<string>) =>
+        spawnAndCollect("git", ChildProcess.make("git", ["-C", repository, ...args]));
+      yield* git(["init", "-q"]);
+      yield* git(["remote", "add", "origin", "git@github.com:acme/Widgets.git"]);
+      const adapter = (yield* createLiteLLMInstance(fixture, [])).orchestrationAdapter;
+
+      sessionTags.length = 0;
+      for (const runtimePolicy of [
+        { cwd: repository, requestTags: ["feature-x", "widgets"] },
+        { cwd: null },
+      ])
+        yield* adapter
+          .openSession({
+            providerSessionId: ProviderSessionId.make("session:tags"),
+            runtimePolicy,
+          } as unknown as ProviderAdapterV2OpenSessionInput)
+          .pipe(Effect.scoped);
+      assert.deepEqual(sessionTags, ["widgets,feature-x", undefined]);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("turns the session's tags into each harness's header setting", () =>
+    Effect.gen(function* () {
+      using fixture = makeFixture();
+      const run = (harness: "claude" | "codex" | "opencode", tags: string | undefined) => {
+        const shim = NodePath.join(fixture.dir, `${harness}-shim`);
+        NodeFS.writeFileSync(shim, liteLLMShimScript(harness), { mode: 0o755 });
+        const { LITELLM_REQUEST_TAGS: _unset, ...environment } = fixture.environment;
+        return spawnAndCollect(
+          shim,
+          ChildProcess.make(shim, ["app-server"], {
+            env: tags === undefined ? environment : { ...environment, LITELLM_REQUEST_TAGS: tags },
+          }),
+        ).pipe(Effect.map((result) => result.stdout));
+      };
+      assert.include(
+        yield* run("claude", "acme,feature-x"),
+        "HEADERS=x-litellm-tags: acme,feature-x",
+      );
+      assert.include(yield* run("claude", undefined), "HEADERS=unset");
+      assert.include(
+        yield* run("codex", "acme"),
+        `lite-ran codex -c model_providers.litellm.env_http_headers={"x-litellm-tags"="LITELLM_REQUEST_TAGS"} app-server`,
+      );
+      assert.include(yield* run("codex", undefined), "lite-ran codex app-server");
+      assert.include(yield* run("opencode", "acme"), "opencode-request-tags.json");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 

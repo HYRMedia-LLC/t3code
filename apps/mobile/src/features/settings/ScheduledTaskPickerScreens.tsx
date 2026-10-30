@@ -99,6 +99,13 @@ export function ScheduledTaskModelPickerRouteScreen() {
             : current,
         )
       }
+      requestTags={{
+        value: editor.draft.requestTags,
+        onChange: (requestTags) =>
+          setEditor((current) =>
+            current ? { ...current, draft: { ...current.draft, requestTags } } : current,
+          ),
+      }}
       onClose={() => navigation.goBack()}
     />
   );

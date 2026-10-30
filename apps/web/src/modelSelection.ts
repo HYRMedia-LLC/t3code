@@ -68,6 +68,34 @@ export interface AppModelOption {
 }
 
 // These catalogs can drop a model, so the composer shows it as unavailable instead of switching silently.
+const LITELLM_REQUEST_TAG_DRIVERS: ReadonlySet<string> = new Set([
+  "claudeAgent",
+  "codex",
+  "opencode",
+]);
+
+/** LiteLLM tags reach the gateway through Claude, Codex and OpenCode; Pi has no tag channel. */
+export function supportsLiteLLMRequestTags(
+  settings: Pick<UnifiedSettings, "providerInstances">,
+  instanceId: ProviderInstanceId,
+  provider: ProviderDriverKind,
+): boolean {
+  return (
+    LITELLM_REQUEST_TAG_DRIVERS.has(provider) &&
+    settings.providerInstances?.[instanceId]?.launcher === "litellm"
+  );
+}
+
+export function isLiteLLMRequestTagTarget(
+  providerInstances: UnifiedSettings["providerInstances"],
+  instanceId: ProviderInstanceId,
+): boolean {
+  const driver = providerInstances?.[instanceId]?.driver;
+  return (
+    driver !== undefined && supportsLiteLLMRequestTags({ providerInstances }, instanceId, driver)
+  );
+}
+
 function hasDynamicCatalog(
   settings: UnifiedSettings,
   instanceId: ProviderInstanceId,

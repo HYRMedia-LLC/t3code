@@ -7,6 +7,7 @@ import {
   OrchestrationV2ThreadForkSourcePoint,
   OrchestrationV2ContextTransfer,
   TrimmedNonEmptyString,
+  LiteLLMRequestTags,
   ModelSelection,
   RuntimeMode,
   ProviderInteractionMode,
@@ -148,15 +149,17 @@ const threadConfiguration = Schema.Struct({
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
+  requestTags: LiteLLMRequestTags,
 });
 const ThreadConfigureTool = Tool.make("t3_thread_configure", {
   ...commandTool,
   description:
-    "Read a thread's provider, model, and modes, or set its provider, model, and options with `modelSelection`. Omit `threadId` for this thread. Permission modes stay. Values from `orchestrator_capabilities`.",
+    "Read a thread's provider, model, modes, and LiteLLM tags. Set provider, model, and options with `modelSelection`, tags with `requestTags`. Omit `threadId` for this thread. Permission modes stay. Values from `orchestrator_capabilities`.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     threadId: Schema.optional(ThreadId),
     modelSelection: Schema.optional(ModelSelection),
+    requestTags: Schema.optional(LiteLLMRequestTags),
   }),
   success: Schema.Union([threadConfiguration, OrchestrationV2DispatchCommandResult]),
 }).annotate(Tool.Destructive, true);

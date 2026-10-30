@@ -68,5 +68,9 @@ describe("project thread title", () => {
     expect(relaunched.titleSeed).toBe(title);
     expect(relaunched.message.text).toBe(wire.text);
     expect(relaunched.message.attachments).toEqual(uploadedAttachments);
+    expect(input).not.toHaveProperty("requestTags");
+    expect(buildProjectThreadStartTurnInput({ ...spec, requestTags: ["team-a"] })).toMatchObject({
+      requestTags: ["team-a"],
+    });
   });
 });

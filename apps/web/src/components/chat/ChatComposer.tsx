@@ -37,12 +37,17 @@ import type {
 import {
   EnvironmentRequestInvalidError,
   AuthOrchestrationOperateScope,
+  parseLiteLLMRequestTags,
   ProviderDriverKind,
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
-import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import {
+  isAtomCommandInterrupted,
+  settlePromise,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
 import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
@@ -231,7 +236,13 @@ import { toastManager } from "../ui/toast";
 import { PlayIcon } from "lucide-react";
 import { proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
 import { hasProviderSetup } from "./ProviderStatusBanner";
-import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
+import {
+  type AppModelOption,
+  getAppModelOptionsForInstance,
+  supportsLiteLLMRequestTags,
+} from "../../modelSelection";
+import { threadEnvironment } from "../../state/threads";
+import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
 import {
   isVideoAttachment,
@@ -810,6 +821,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (store) => store.syncPersistedAttachments,
   );
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
+  const setComposerDraftRequestTags = useComposerDraftStore((store) => store.setRequestTags);
+  const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
+  const commitThreadRequestTags = (text: string) => {
+    if (!activeThread) return;
+    void updateThreadMetadata({
+      environmentId,
+      input: { threadId: activeThread.id, requestTags: parseLiteLLMRequestTags(text) },
+    }).then((result) => {
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add({
+          type: "error",
+          title: "Failed to update tags",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        });
+      }
+    });
+  };
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts or releases server attachment uploads as upload capability, limits and draft attachments change
   useEffect(() => {
@@ -2288,6 +2319,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : composerControlsCollapsed
       ? 0
       : expandedControlsIconOnlyBlockCount;
+  const requestTagsSupported = supportsLiteLLMRequestTags(
+    settings,
+    selectedInstanceId,
+    selectedProvider,
+  );
+  const requestTagsControl = requestTagsSupported
+    ? routeKind === "server" && activeThread
+      ? {
+          value: activeThread.requestTags.join(", "),
+          onCommit: commitThreadRequestTags,
+        }
+      : {
+          value: composerDraft.requestTags,
+          onCommit: (text: string) => setComposerDraftRequestTags(composerDraftTarget, text),
+        }
+    : null;
   const composerControls = (
     <ComposerControlsBar
       environmentId={environmentId}
@@ -2338,6 +2385,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onModelPickerOpenChange={setIsComposerModelPickerOpen}
       modelPickerIconClassName={composerProviderState.modelPickerIconClassName}
       getModelDisabledReason={getModelDisabledReason}
+      requestTags={requestTagsControl}
     />
   );
   // An open question owns the space above the composer. Only a machine problem,

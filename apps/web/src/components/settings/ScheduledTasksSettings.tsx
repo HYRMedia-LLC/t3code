@@ -46,7 +46,7 @@ import {
 
 import { formatRelativeTime } from "../../timestampFormat";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
-import { getCustomModelOptionsByInstance } from "../../modelSelection";
+import { getCustomModelOptionsByInstance, supportsLiteLLMRequestTags } from "../../modelSelection";
 import { providerInstanceEntriesFor } from "../../providerInstances";
 import { usePrimaryCloudLinkState } from "../../cloud/primaryCloudLinkState";
 import { requestConfirmDialog } from "../../confirmDialog";
@@ -84,6 +84,7 @@ import {
   type DraftState,
   type ScheduleMode,
   type WorkspaceMode,
+  draftRequestTags,
 } from "./scheduledTasksSettings.logic";
 import { Label } from "../ui/label";
 import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "../ui/menu";
@@ -143,6 +144,7 @@ const EMPTY_DRAFT: DraftState = {
   modelKey: "",
   runtimeMode: "full-access",
   interactionMode: "default",
+  requestTags: "",
   baseModelSelection: null,
   signatureEnabled: false,
   ...WEBHOOK_SIGNATURE_DEFAULTS,
@@ -1159,6 +1161,12 @@ function ScheduledTaskEditorForm({
   const activeInstanceId =
     activeSelection?.instanceId ?? firstInstance?.instanceId ?? ("" as ProviderInstanceId);
   const activeModel = activeSelection?.model ?? "";
+  const activeDriverKind = instanceEntries.find(
+    (entry) => entry.instanceId === activeInstanceId,
+  )?.driverKind;
+  const requestTagsSupported =
+    activeDriverKind !== undefined &&
+    supportsLiteLLMRequestTags(settings, activeInstanceId, activeDriverKind);
   const modelOptionsByInstance = getCustomModelOptionsByInstance(
     settings,
     providers,
@@ -1255,6 +1263,7 @@ function ScheduledTaskEditorForm({
       modelSelection,
       runtimeMode: draft.runtimeMode,
       interactionMode: draft.interactionMode,
+      requestTags: draftRequestTags(draft, requestTagsSupported),
       creationSource: "web",
     };
     // Lock before React renders, and keep successful creates locked until the form closes.
@@ -1483,6 +1492,20 @@ function ScheduledTaskEditorForm({
               />
             </div>
           </Field>
+
+          {requestTagsSupported ? (
+            <Field label="Tags" hint="LiteLLM, optional" htmlFor="scheduled-task-request-tags">
+              <Input
+                id="scheduled-task-request-tags"
+                nativeInput
+                placeholder="Separate tags with commas"
+                value={draft.requestTags}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, requestTags: event.target.value }))
+                }
+              />
+            </Field>
+          ) : null}
 
           <div className="space-y-3">
             {task?.schedule.type === "interval" &&

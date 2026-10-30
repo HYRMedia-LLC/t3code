@@ -1145,6 +1145,13 @@ export const StorageCleanupSettings = Schema.Struct({
 });
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
+/** The tag every LiteLLM request carries: the project's repository name, custom text, or none. */
+export const LiteLLMDefaultRequestTag = Schema.Struct({
+  mode: Schema.Literals(["repo", "custom", "off"]),
+  custom: Schema.String,
+});
+export type LiteLLMDefaultRequestTag = typeof LiteLLMDefaultRequestTag.Type;
+
 export const ServerSettings = Schema.Struct({
   // Null means unmigrated; empty is authoritative and must not resurrect cleared preferences.
   favorites: Schema.NullOr(ModelFavorites).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
@@ -1315,6 +1322,9 @@ export const ServerSettings = Schema.Struct({
   ),
   cursorKeychainUsageEnabled: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  liteLLMDefaultRequestTag: LiteLLMDefaultRequestTag.pipe(
+    Schema.withDecodingDefault(Effect.succeed({ mode: "repo" as const, custom: "" })),
   ),
 
   usagePriceOverrides: Schema.Record(TrimmedNonEmptyString, UsageModelPriceOverride).pipe(
@@ -1627,6 +1637,7 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Record(UsageLimitSourceId, Schema.NullOr(UsageLimitSourceConfig)),
   ),
   cursorKeychainUsageEnabled: Schema.optionalKey(Schema.Boolean),
+  liteLLMDefaultRequestTag: Schema.optionalKey(LiteLLMDefaultRequestTag),
 
   usagePriceOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, Schema.NullOr(UsageModelPriceOverride)),

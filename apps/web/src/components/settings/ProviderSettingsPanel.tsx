@@ -49,6 +49,8 @@ import {
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { cn } from "../../lib/utils";
+import { DraftInput } from "../ui/draft-input";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { resolveAppModelSelectionState } from "../../modelSelection";
 import {
   useEnvironments,
@@ -131,6 +133,71 @@ import {
   resolveRemoteOperateAccess,
   resolveSelectedProviderEnvironmentId,
 } from "./ProviderSettingsPanel.logic";
+
+const LITELLM_DEFAULT_TAG_MODES = [
+  { value: "repo", label: "Repository name" },
+  { value: "custom", label: "Custom" },
+  { value: "off", label: "Off" },
+] as const;
+
+function LiteLLMDefaultRequestTagRow(props: {
+  value: UnifiedSettings["liteLLMDefaultRequestTag"];
+  disabled: boolean;
+  onChange: (value: UnifiedSettings["liteLLMDefaultRequestTag"]) => void;
+}) {
+  return (
+    <SettingsRow
+      title="LiteLLM default request tag"
+      description="Sent with every LiteLLM request, before the thread's own tags."
+      control={
+        <div
+          inert={props.disabled}
+          aria-disabled={props.disabled || undefined}
+          className={cn(
+            "flex w-full flex-col gap-2 sm:w-56",
+            props.disabled && "opacity-50 select-none",
+          )}
+        >
+          <Select
+            value={props.value.mode}
+            onValueChange={(mode) => {
+              const next = LITELLM_DEFAULT_TAG_MODES.find((candidate) => candidate.value === mode);
+              if (next) props.onChange({ ...props.value, mode: next.value });
+            }}
+          >
+            <SelectTrigger size="sm" className="w-full" aria-label="LiteLLM default request tag">
+              <SelectValue>
+                {(value: string | null) =>
+                  LITELLM_DEFAULT_TAG_MODES.find((mode) => mode.value === value)?.label
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              {LITELLM_DEFAULT_TAG_MODES.map((mode) => (
+                <SelectItem hideIndicator key={mode.value} value={mode.value}>
+                  {mode.label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+          {props.value.mode === "custom" ? (
+            <DraftInput
+              nativeInput
+              size="sm"
+              className="w-full"
+              aria-label="Custom LiteLLM default request tag"
+              placeholder="Tag"
+              autoCapitalize="none"
+              spellCheck={false}
+              value={props.value.custom}
+              onCommit={(custom) => props.onChange({ ...props.value, custom: custom.trim() })}
+            />
+          ) : null}
+        </div>
+      }
+    />
+  );
+}
 
 function modelListChanges(current: ReadonlyArray<string>, next: ReadonlyArray<string>) {
   const currentSet = new Set(current);
@@ -1153,6 +1220,15 @@ export function EnvironmentProviderSettings({
           }
         />
         <CompactIdleThreadsRow />
+        {Object.values(settings.providerInstances ?? {}).some(
+          (instance) => instance.launcher === "litellm",
+        ) ? (
+          <LiteLLMDefaultRequestTagRow
+            value={settings.liteLLMDefaultRequestTag}
+            disabled={!canWriteSettings}
+            onChange={(liteLLMDefaultRequestTag) => updateSettings({ liteLLMDefaultRequestTag })}
+          />
+        ) : null}
       </SettingsSection>
 
       {isAddInstanceDialogOpen && !readOnly ? (

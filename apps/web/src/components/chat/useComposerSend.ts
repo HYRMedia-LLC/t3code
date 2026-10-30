@@ -22,9 +22,11 @@ import {
   type ModelSelection,
   type PreviewAnnotationPayload,
   type ThreadId,
+  parseLiteLLMRequestTags,
   ProviderInteractionMode,
   RuntimeMode,
 } from "@t3tools/contracts";
+import { supportsLiteLLMRequestTags } from "../../modelSelection";
 import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
 import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
 import {
@@ -143,6 +145,7 @@ import type { useWorktreeSetup } from "./useWorktreeSetup";
 const ENVIRONMENT_UNAVAILABLE_SEND_TOAST_TRAIL_SIZE = 3;
 
 const selectPlanModeEnabled = (settings: UnifiedSettings) => settings.planModeEnabled;
+const selectProviderInstances = (settings: UnifiedSettings) => settings.providerInstances;
 
 function readEnvironmentPresentation(environmentId: EnvironmentId) {
   return appAtomRegistry.get(environmentPresentations.presentationsAtom).get(environmentId);
@@ -329,6 +332,7 @@ export function useComposerSend(input: ComposerSendInput) {
   const navigate = useNavigate();
   const clientSettingsHydrated = useClientSettingsHydrated();
   const planModeEnabled = useEnvironmentSettings(environmentId, selectPlanModeEnabled);
+  const providerInstances = useEnvironmentSettings(environmentId, selectProviderInstances);
   const startThreadTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
   });
@@ -357,6 +361,7 @@ export function useComposerSend(input: ComposerSendInput) {
     composerRef,
     promptRef,
     runtimeMode,
+    providerInstances,
     startFromOrigin,
     resetLocalDispatch,
     setThreadError,
@@ -1189,6 +1194,23 @@ export function useComposerSend(input: ComposerSendInput) {
       ctxSelectedModelSelection.options,
     );
 
+    const sendDriverKind = providerInstanceEntries.find(
+      (entry) => entry.instanceId === ctxSelectedModelSelection.instanceId,
+    )?.driverKind;
+    const newThreadRequestTags =
+      isLocalDraftThread &&
+      sendDriverKind !== undefined &&
+      supportsLiteLLMRequestTags(
+        { providerInstances },
+        ctxSelectedModelSelection.instanceId,
+        sendDriverKind,
+      )
+        ? parseLiteLLMRequestTags(
+            useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.requestTags ??
+              "",
+          )
+        : [];
+
     let failure: AtomCommandResult<unknown, unknown> | null = null;
 
     if (failure === null && isServerThread) {
@@ -1296,6 +1318,7 @@ export function useComposerSend(input: ComposerSendInput) {
           titleSeed: title,
           runtimeMode,
           interactionMode: sendInteractionMode,
+          ...(newThreadRequestTags.length > 0 ? { requestTags: newThreadRequestTags } : {}),
           dispatchMode: turnDispatchMode,
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,

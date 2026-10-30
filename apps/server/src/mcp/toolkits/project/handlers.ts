@@ -208,6 +208,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
                 Effect.orElseSucceed(() => runtimeMode),
               )
             : runtimeMode;
+        const requestTags = input.requestTags ?? caller?.requestTags;
         const result = yield* ThreadMessageIntake.launchThread({
           commandId,
           threadId,
@@ -216,6 +217,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           modelSelection,
           runtimeMode: startedRuntimeMode,
           interactionMode,
+          ...(requestTags === undefined ? {} : { requestTags }),
           workspaceStrategy: input.workspaceStrategy ?? { type: "root" },
           ...(input.message === undefined && attachments.length === 0
             ? {}

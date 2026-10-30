@@ -45,6 +45,30 @@ export type ProviderInstanceEnvironment = typeof ProviderInstanceEnvironment.Typ
 export const ProviderInstanceLauncher = Schema.Literal("litellm");
 export type ProviderInstanceLauncher = typeof ProviderInstanceLauncher.Type;
 
+const REQUEST_TAG_MAX_CHARS = 64;
+const REQUEST_TAGS_MAX = 16;
+
+/** One LiteLLM request tag. Tags travel comma-separated, so a tag holds no comma. */
+export const LiteLLMRequestTag = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(REQUEST_TAG_MAX_CHARS),
+  Schema.isPattern(/^[^,]+$/),
+);
+export const LiteLLMRequestTags = Schema.Array(LiteLLMRequestTag).check(
+  Schema.isMaxLength(REQUEST_TAGS_MAX),
+);
+export type LiteLLMRequestTags = typeof LiteLLMRequestTags.Type;
+
+/** Splits free text on commas, trims, and drops empty and repeated tags. */
+export const parseLiteLLMRequestTags = (text: string): Array<string> =>
+  [
+    ...new Set(
+      text
+        .split(",")
+        .map((tag) => tag.trim().slice(0, REQUEST_TAG_MAX_CHARS))
+        .filter((tag) => tag.length > 0),
+    ),
+  ].slice(0, REQUEST_TAGS_MAX);
+
 /** Drivers decode their own config; unknown-driver envelopes round-trip verbatim across versions. */
 export const ProviderInstanceConfig = Schema.Struct({
   driver: ProviderDriverKind,

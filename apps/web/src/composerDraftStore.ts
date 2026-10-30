@@ -248,6 +248,7 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   modelSelectionExplicit: Schema.optionalKey(Schema.Boolean),
   runtimeMode: Schema.optionalKey(RuntimeMode),
   interactionMode: Schema.optionalKey(ProviderInteractionMode),
+  requestTags: Schema.optionalKey(Schema.String),
 });
 type PersistedComposerThreadDraftState = typeof PersistedComposerThreadDraftState.Type;
 
@@ -372,6 +373,8 @@ export interface ComposerThreadDraftState {
   modelSelectionExplicit?: boolean;
   runtimeMode: RuntimeMode | null;
   interactionMode: ProviderInteractionMode | null;
+  /** Raw comma-separated LiteLLM tags as typed; parsed at send. */
+  requestTags: string;
 }
 
 export function composerDraftHasUserContent(
@@ -529,6 +532,7 @@ interface ComposerDraftStoreState {
     threadRef: ComposerThreadTarget,
     runtimeMode: RuntimeMode | null | undefined,
   ) => void;
+  setRequestTags: (threadRef: ComposerThreadTarget, requestTags: string) => void;
   setInteractionMode: (
     threadRef: ComposerThreadTarget,
     interactionMode: ProviderInteractionMode | null | undefined,
@@ -761,6 +765,7 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   activeProvider: null,
   runtimeMode: null,
   interactionMode: null,
+  requestTags: "",
 });
 
 function createEmptyThreadDraft(): ComposerThreadDraftState {
@@ -779,6 +784,7 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
     activeProvider: null,
     runtimeMode: null,
     interactionMode: null,
+    requestTags: "",
   };
 }
 
@@ -884,7 +890,8 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
     draft.activeProvider === null &&
     draft.runtimeMode === null &&
-    draft.interactionMode === null
+    draft.interactionMode === null &&
+    draft.requestTags.length === 0
   );
 }
 
@@ -1813,6 +1820,8 @@ function normalizePersistedDraftsByThreadId(
       draftCandidate.interactionMode === "plan" || draftCandidate.interactionMode === "default"
         ? draftCandidate.interactionMode
         : null;
+    const requestTags =
+      typeof draftCandidate.requestTags === "string" ? draftCandidate.requestTags : "";
     const contextIds = new Map<string, string>();
     for (const [kind, entries] of [
       ["image", attachments],
@@ -1903,7 +1912,8 @@ function normalizePersistedDraftsByThreadId(
       environmentContexts.length === 0 &&
       !hasModelData &&
       !runtimeMode &&
-      !interactionMode
+      !interactionMode &&
+      requestTags.length === 0
     ) {
       continue;
     }
@@ -1937,6 +1947,7 @@ function normalizePersistedDraftsByThreadId(
         : {}),
       ...(runtimeMode ? { runtimeMode } : {}),
       ...(interactionMode ? { interactionMode } : {}),
+      ...(requestTags.length > 0 ? { requestTags } : {}),
     };
   }
 
@@ -1976,7 +1987,9 @@ function stripLegacyModelSeedsFromEmptyDraftSessions(
         modelSelectionExplicit: _modelSelectionExplicit,
         ...retained
       } = draft;
-      return retained.runtimeMode || retained.interactionMode ? [[threadKey, retained]] : [];
+      return retained.runtimeMode || retained.interactionMode || retained.requestTags
+        ? [[threadKey, retained]]
+        : [];
     }),
   );
 }
@@ -2034,7 +2047,8 @@ export function partializeComposerDraftStoreState(
       draft.environmentContexts.length === 0 &&
       !hasModelData &&
       draft.runtimeMode === null &&
-      draft.interactionMode === null
+      draft.interactionMode === null &&
+      draft.requestTags.length === 0
     ) {
       continue;
     }
@@ -2101,6 +2115,7 @@ export function partializeComposerDraftStoreState(
         : {}),
       ...(draft.runtimeMode ? { runtimeMode: draft.runtimeMode } : {}),
       ...(draft.interactionMode ? { interactionMode: draft.interactionMode } : {}),
+      ...(draft.requestTags.length > 0 ? { requestTags: draft.requestTags } : {}),
     };
     persistedDraftsByThreadKey[threadKey] = persistedDraft;
   }
@@ -2371,6 +2386,7 @@ function toHydratedThreadDraft(
     ...(persistedDraft.modelSelectionExplicit ? { modelSelectionExplicit: true } : {}),
     runtimeMode: persistedDraft.runtimeMode ?? null,
     interactionMode: persistedDraft.interactionMode ?? null,
+    requestTags: persistedDraft.requestTags ?? "",
   };
 }
 
@@ -3110,6 +3126,30 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               ...base,
               runtimeMode: nextRuntimeMode,
             };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        setRequestTags: (threadRef, requestTags) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) {
+            return;
+          }
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey];
+            if (!existing && requestTags.length === 0) {
+              return state;
+            }
+            const base = existing ?? createEmptyThreadDraft();
+            if (base.requestTags === requestTags) {
+              return state;
+            }
+            const nextDraft: ComposerThreadDraftState = { ...base, requestTags };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {
               delete nextDraftsByThreadKey[threadKey];

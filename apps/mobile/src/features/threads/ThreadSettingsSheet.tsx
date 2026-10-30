@@ -6,7 +6,7 @@ import { SheetHeader } from "../../components/ui/SheetHeader";
 import { Toolbar } from "../../components/ui/Toolbar";
 import * as Dialog from "../../components/ui/Dialog";
 import { createV5StackNavigator as createNativeStackNavigator } from "../../native/createV5StackNavigator";
-import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS, parseLiteLLMRequestTags } from "@t3tools/contracts";
 import {
   modelPreferencesMigrationPatch,
   resolveModelPreferences,
@@ -67,6 +67,7 @@ import {
   type ProviderGroup,
 } from "../../lib/modelOptions";
 import { applyProviderOptionSelection } from "../../lib/providerOptions";
+import { formatRequestTags, supportsRequestTags } from "../../lib/requestTags";
 import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import {
@@ -94,6 +95,7 @@ import { threadAllowsProviderSwitch } from "../../state/thread-provider-switchin
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { threadEnvironment } from "../../state/threads";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import {
@@ -257,6 +259,44 @@ function SwitchRow(props: {
   );
 }
 
+function TagsRow(props: {
+  readonly tags: ReadonlyArray<string>;
+  readonly onChange: (tags: ReadonlyArray<string>) => void;
+  readonly isLast?: boolean;
+}) {
+  const [text, setText] = useState(() => formatRequestTags(props.tags));
+  const commit = () => {
+    const next = parseLiteLLMRequestTags(text);
+    setText(formatRequestTags(next));
+    if (formatRequestTags(next) !== formatRequestTags(props.tags)) props.onChange(next);
+  };
+  return (
+    <View
+      className={cn(
+        "min-h-11 flex-row items-center gap-3 bg-grouped-card px-4 py-1 android:min-h-14",
+        !props.isLast && "border-b border-border-subtle",
+      )}
+    >
+      <Text className="text-sm font-t3-medium text-foreground">Tags</Text>
+      <TextInput
+        accessibilityLabel="Request tags"
+        autoCapitalize="none"
+        autoCorrect={false}
+        className="min-w-0 flex-1 py-2 text-right text-sm text-foreground"
+        onChangeText={setText}
+        onEndEditing={commit}
+        placeholder="Comma-separated"
+        placeholderTextColorClassName="accent-placeholder"
+        returnKeyType="done"
+        selectionColorClassName="accent-focus/32"
+        cursorColorClassName="accent-focus"
+        selectionHandleColorClassName="accent-focus"
+        value={text}
+      />
+    </View>
+  );
+}
+
 type ThreadSettingsSubmenuPage =
   | { readonly kind: "descriptor"; readonly id: string }
   | { readonly kind: "runtime" };
@@ -277,6 +317,11 @@ type ThreadSettingsSessionProps = {
   readonly onUpdateOptionSelections: (selections: ReadonlyArray<ProviderOptionSelection>) => void;
   readonly runtimeMode: RuntimeMode;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
+  /** Shown only while the displayed model's provider instance forwards LiteLLM request tags. */
+  readonly requestTags?: {
+    readonly value: ReadonlyArray<string>;
+    readonly onChange: (tags: ReadonlyArray<string>) => void;
+  };
 };
 
 /** The composer draft the sheet edits: the thread's own, or a queued message being edited. */
@@ -300,6 +345,7 @@ type ThreadSettingsSessionValue = {
   readonly runtimeMode: RuntimeMode;
   readonly runtimeModeChoices: ReturnType<typeof runtimeModeChoicesForSupportedModes>;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
+  readonly requestTags: ThreadSettingsSessionProps["requestTags"];
   readonly displayedDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
   readonly promptTraits: ReturnType<typeof getPromptControlledTraits>;
   readonly displayedModelSelection: ModelSelection | null;
@@ -610,6 +656,12 @@ function ThreadSettingsSessionProvider(
     runtimeMode: compatibleRuntimeMode,
     runtimeModeChoices,
     onUpdateRuntimeMode: props.onUpdateRuntimeMode,
+    requestTags: supportsRequestTags(
+      config,
+      displayedModel?.selection.instanceId ?? props.providerInstanceId,
+    )
+      ? props.requestTags
+      : undefined,
     displayedDescriptors,
     promptTraits,
     displayedModelSelection: pendingModel?.selection ?? props.selectedModel,
@@ -886,6 +938,11 @@ function ThreadSettingsOptionsItem(props: {
             </Animated.View>
           );
         })}
+        {session.requestTags ? (
+          <Animated.View layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}>
+            <TagsRow tags={session.requestTags.value} onChange={session.requestTags.onChange} />
+          </Animated.View>
+        ) : null}
         <Animated.View layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}>
           <DisclosureRow
             isLast
@@ -1501,6 +1558,7 @@ export function ExistingThreadSettingsRouteScreen({
   // Streamed text would otherwise re-render the whole model picker on every delta.
   const structure = useQuietThreadStructure(selectedThreadDetailRef);
   const reportedModelSelection = useThreadReportedModelSelection(selectedThreadDetailRef);
+  const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata);
   const threadKey = scopedThreadKey(route.params.environmentId, route.params.threadId);
   const draftSettings = useComposerDraftSettings(threadKey);
   const queuedRunEdit = useQueuedRunEdit(threadKey);
@@ -1558,6 +1616,14 @@ export function ExistingThreadSettingsRouteScreen({
       }}
       runtimeMode={draftSettings.runtimeMode ?? selectedThread.runtimeMode}
       onUpdateRuntimeMode={(runtimeMode) => updateComposerDraftSettings(threadKey, { runtimeMode })}
+      requestTags={{
+        value: selectedThread.requestTags,
+        onChange: (requestTags) =>
+          void updateThreadMetadata({
+            environmentId: selectedThread.environmentId,
+            input: { threadId: selectedThread.id, requestTags },
+          }),
+      }}
       onClose={() => navigation.goBack()}
     />
   );
@@ -1587,6 +1653,7 @@ export function NewTaskThreadSettingsRouteScreen() {
       onUpdateOptionSelections={flow.setSelectedModelOptions}
       runtimeMode={flow.runtimeMode}
       onUpdateRuntimeMode={flow.setRuntimeMode}
+      requestTags={{ value: flow.requestTags, onChange: flow.setRequestTags }}
       onClose={() => navigation.goBack()}
     />
   );

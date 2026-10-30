@@ -5,6 +5,7 @@
  * `lite` owns the key, its refresh, and the gateway URL (`LITELLM_PROXY_URL`).
  */
 import {
+  parseLiteLLMRequestTags,
   ProviderSetupError,
   type ModelCapabilities,
   type ModelSelection,
@@ -13,6 +14,7 @@ import {
   type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
+import { parseGitRemoteRepository } from "@t3tools/shared/git";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Clock from "effect/Clock";
@@ -93,9 +95,42 @@ export const liteLLMShimScript = (harness: LiteLLMHarness): string =>
     ...(harness === "opencode"
       ? ['if [ "${OPENCODE_CONFIG_CONTENT-}" = "{}" ]; then unset OPENCODE_CONFIG_CONTENT; fi']
       : []),
+    ...requestTagShimLines(harness),
     `exec lite ${harness} "$@"`,
     "",
   ].join("\n");
+
+/** T3 sets this per session; the shim turns it into the harness's own header setting. */
+const LITELLM_REQUEST_TAGS_ENV = "LITELLM_REQUEST_TAGS";
+const TAGS_SET = `[ -n "\${${LITELLM_REQUEST_TAGS_ENV}-}" ]`;
+
+/**
+ * Claude reads extra headers from `ANTHROPIC_CUSTOM_HEADERS`. Codex reads them from
+ * the provider `lite` adds; the override must come before the subcommand
+ * (BerriAI/litellm#40651). OpenCode merges a config file over the one `lite` passes.
+ */
+const requestTagShimLines = (harness: LiteLLMHarness): ReadonlyArray<string> => {
+  switch (harness) {
+    case "claude":
+      return [
+        `if ${TAGS_SET}; then export ANTHROPIC_CUSTOM_HEADERS="x-litellm-tags: $${LITELLM_REQUEST_TAGS_ENV}\${ANTHROPIC_CUSTOM_HEADERS:+`,
+        `$ANTHROPIC_CUSTOM_HEADERS}"; fi`,
+      ];
+    case "codex":
+      return [
+        `if ${TAGS_SET}; then set -- -c 'model_providers.litellm.env_http_headers={"x-litellm-tags"="${LITELLM_REQUEST_TAGS_ENV}"}' "$@"; fi`,
+      ];
+    case "opencode":
+      return [
+        `if ${TAGS_SET} && [ -z "\${OPENCODE_CONFIG-}" ]; then export OPENCODE_CONFIG="$(dirname "$0")/${OPENCODE_TAGS_CONFIG}"; fi`,
+      ];
+    case "pi":
+      return [];
+  }
+};
+
+const OPENCODE_TAGS_CONFIG = "opencode-request-tags.json";
+const openCodeTagsConfig = `{"provider":{"litellm":{"options":{"headers":{"x-litellm-tags":"{env:${LITELLM_REQUEST_TAGS_ENV}}"}}}}}`;
 
 const CLI_VERSION_PATTERN = /LiteLLM Proxy CLI Version:\s*v?(\d+\.\d+\.\d+)/;
 const parseLiteLLMCliVersion = (output: string): string | undefined =>
@@ -462,6 +497,11 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
       yield* fileSystem.makeDirectory(homeDir, { recursive: true });
       yield* fileSystem.writeFileString(binaryPath, liteLLMShimScript(spec.harness));
       yield* fileSystem.chmod(binaryPath, 0o755);
+      if (spec.harness === "opencode")
+        yield* fileSystem.writeFileString(
+          path.join(path.dirname(binaryPath), OPENCODE_TAGS_CONFIG),
+          openCodeTagsConfig,
+        );
     }).pipe(Effect.mapError((cause) => fail("Could not write the LiteLLM launcher.", cause)));
 
     const userEnvironment = new Set(input.environment.map((variable) => variable.name));
@@ -542,6 +582,53 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
         : `${renewedExpiry}:${modelListKey(models)}`;
     });
 
+    const repositoryTags = new Map<string, string>();
+    const repositoryTag = Effect.fn("LiteLLM.repositoryTag")(function* (cwd: string) {
+      const known = repositoryTags.get(cwd);
+      if (known !== undefined) return known;
+      const git = (args: ReadonlyArray<string>) =>
+        spawnAndCollect("git", ChildProcess.make("git", ["-C", cwd, ...args])).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.map((result) => (result.code === 0 ? result.stdout.trim() : "")),
+          Effect.orElseSucceed(() => ""),
+        );
+      const remote = parseGitRemoteRepository(yield* git(["remote", "get-url", "origin"]));
+      // A worktree's folder is not the repository's; the shared git dir sits in the main checkout.
+      const commonDir =
+        remote === null
+          ? yield* git(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+          : "";
+      const tag =
+        remote?.path.split("/").at(-1) ??
+        (commonDir === "" ? path.basename(cwd) : path.basename(path.dirname(commonDir)));
+      repositoryTags.set(cwd, tag);
+      return tag;
+    });
+    const withRequestTags = Effect.fn("LiteLLM.withRequestTags")(function* (
+      policy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+    ) {
+      const setting = yield* host.settings.get.pipe(
+        Effect.map((settings) => settings.liteLLMDefaultRequestTag),
+        Effect.orElseSucceed(() => ({ mode: "repo" as const, custom: "" })),
+      );
+      const defaultTags =
+        setting.mode === "custom"
+          ? parseLiteLLMRequestTags(setting.custom)
+          : setting.mode === "repo" && policy.cwd !== null
+            ? [yield* repositoryTag(policy.cwd)]
+            : [];
+      const tags = [...new Set([...defaultTags, ...(policy.requestTags ?? [])])];
+      return tags.length === 0
+        ? policy
+        : {
+            ...policy,
+            launchEnvironment: {
+              ...policy.launchEnvironment,
+              [LITELLM_REQUEST_TAGS_ENV]: tags.join(","),
+            },
+          };
+    });
+
     const instance = yield* driver.create({ ...input, config, environment, launchGeneration });
     yield* Deferred.succeed(innerSnapshot, instance.snapshot);
     const snapshot = wrapSnapshot(instance.snapshot, status, freshStatus, (current, liteStatus) =>
@@ -581,15 +668,26 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
                 detail: `${current.auth.message} Sign in again in Settings > Providers.`,
               }),
             });
-          const runtime = yield* adapter.openSession(session);
+          const runtime = yield* adapter.openSession({
+            ...session,
+            runtimePolicy: yield* withRequestTags(session.runtimePolicy),
+          });
+          const tagged = (turn: ProviderAdapter.ProviderAdapterV2TurnInput) =>
+            withRequestTags(turn.runtimePolicy).pipe(
+              Effect.map((runtimePolicy) => ({ ...turn, runtimePolicy })),
+            );
+          const compactThread = runtime.compactThread;
           return {
             ...runtime,
+            ...(compactThread === undefined
+              ? {}
+              : { compactThread: (turn) => tagged(turn).pipe(Effect.flatMap(compactThread)) }),
             startTurn: (turn) =>
               snapshot.getSnapshot.pipe(
                 Effect.flatMap(({ models }) =>
                   models.length === 0 ||
                   servesRequestedModel(models, turn.modelSelection.model, spec.servesModel)
-                    ? runtime.startTurn(turn)
+                    ? tagged(turn).pipe(Effect.flatMap(runtime.startTurn))
                     : new ProviderAdapter.ProviderAdapterTurnStartError({
                         driver: adapter.driver,
                         threadId: turn.threadId,
