@@ -95,6 +95,7 @@ import {
 } from "./new-task-context-presentation";
 import { resolveEnvironmentProjectMatch } from "./new-task-project-selection";
 import { useNewTaskProjectDefaults } from "./use-new-task-project-defaults";
+import { supportsRequestTags } from "../../lib/requestTags";
 import { resolveProjectThreadCreationBranch } from "./projectThreadCreationValidation";
 import {
   INACTIVE_FLOW_KEY,
@@ -155,6 +156,7 @@ type NewTaskFlowContextValue = {
   readonly availableBranches: ReadonlyArray<VcsRef>;
   readonly currentCheckoutBranchName: string | null;
   readonly runtimeMode: RuntimeMode;
+  readonly requestTags: ReadonlyArray<string>;
   readonly interactionMode: ProviderInteractionMode;
   readonly planModeEnabled: boolean;
   readonly expandedProvider: string | null;
@@ -208,12 +210,15 @@ type NewTaskFlowContextValue = {
   readonly setSubmitting: (value: boolean) => void;
   readonly loadBranches: () => void;
   readonly setRuntimeMode: (value: RuntimeMode) => void;
+  readonly setRequestTags: (value: ReadonlyArray<string>) => void;
   readonly setInteractionMode: (value: ProviderInteractionMode) => void;
   readonly setSelectedModelOptions: (
     value: ReadonlyArray<ProviderOptionSelection> | undefined,
   ) => void;
   readonly setExpandedProvider: (value: string | null) => void;
 };
+
+const NO_REQUEST_TAGS: ReadonlyArray<string> = [];
 
 const NewTaskFlowContext = React.createContext<NewTaskFlowContextValue | null>(null);
 
@@ -764,6 +769,13 @@ export function NewTaskFlowProvider(
       updateComposerDraftSettings(selectedProjectDraftKey, { runtimeMode: value });
     }
   };
+  const setRequestTags = (value: ReadonlyArray<string>) => {
+    if (selectedProjectDraftKey) {
+      updateComposerDraftSettings(selectedProjectDraftKey, {
+        requestTags: value.length > 0 ? value : undefined,
+      });
+    }
+  };
   const setInteractionMode = (value: ProviderInteractionMode) => {
     if (selectedProjectDraftKey) {
       updateComposerDraftSettings(selectedProjectDraftKey, {
@@ -834,6 +846,10 @@ export function NewTaskFlowProvider(
           currentCheckoutBranch: options?.currentCheckoutBranch ?? null,
         }),
         worktreePath: mode === "worktree" ? null : (workspaceSelection?.worktreePath ?? null),
+        ...(draft.requestTags?.length &&
+        supportsRequestTags(selectedEnvironmentServerConfig, draftModelSelection.instanceId)
+          ? { requestTags: draft.requestTags }
+          : {}),
         ...((workspaceSelection?.startFromOrigin ?? startFromOrigin)
           ? { startFromOrigin: true }
           : {}),
@@ -865,6 +881,7 @@ export function NewTaskFlowProvider(
     availableBranches,
     currentCheckoutBranchName,
     runtimeMode,
+    requestTags: selectedProjectDraft.requestTags ?? NO_REQUEST_TAGS,
     interactionMode,
     planModeEnabled,
     expandedProvider,
@@ -897,6 +914,7 @@ export function NewTaskFlowProvider(
     setSubmitting: (value: boolean) => updateFlow({ submitting: value }),
     loadBranches,
     setRuntimeMode,
+    setRequestTags,
     setInteractionMode,
     setSelectedModelOptions,
     setExpandedProvider: (value: string | null) => updateFlow({ expandedProvider: value }),

@@ -1,8 +1,10 @@
 import {
+  parseLiteLLMRequestTags,
   type EnvironmentId,
   type ModelSelection,
   type RuntimeMode,
   type ThreadId,
+  type UnifiedSettings,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
@@ -10,6 +12,7 @@ import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { useNavigate } from "@tanstack/react-router";
 import { newMessageId } from "~/lib/utils";
+import { isLiteLLMRequestTagTarget } from "../../modelSelection";
 import { collapseExpandedComposerCursor } from "../../composer-logic";
 import {
   type ComposerThreadTarget,
@@ -50,6 +53,7 @@ interface MultipleModelSendInput {
   readonly composerRef: ComposerHandleRef;
   readonly promptRef: { current: string };
   readonly runtimeMode: RuntimeMode;
+  readonly providerInstances: UnifiedSettings["providerInstances"];
   readonly startFromOrigin: boolean;
   readonly resetLocalDispatch: ReturnType<typeof useLocalDispatchState>["resetLocalDispatch"];
   readonly setThreadError: ReturnType<typeof makeThreadErrorSetter>;
@@ -70,6 +74,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     composerRef,
     promptRef,
     runtimeMode,
+    providerInstances,
     startFromOrigin,
     resetLocalDispatch,
     setThreadError,
@@ -147,6 +152,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
           clearedDraftSnapshot &&
         appAtomRegistry.get(fanoutSelectionsAtom) === submittedSelections;
       setThreadError(threadId, null);
+      const draftRequestTags = parseLiteLLMRequestTags(clearedDraftSnapshot?.requestTags ?? "");
       const starts = Promise.all(
         targets.map(async (target) => {
           const started = await startFanoutThread({
@@ -175,6 +181,10 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
                   titleSeed: title,
                   runtimeMode,
                   interactionMode: target.interactionMode,
+                  ...(draftRequestTags.length > 0 &&
+                  isLiteLLMRequestTagTarget(providerInstances, target.selection.instanceId)
+                    ? { requestTags: draftRequestTags }
+                    : {}),
                   bootstrap: {
                     createThread: {
                       projectId: project.id,

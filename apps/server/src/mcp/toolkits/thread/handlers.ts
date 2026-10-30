@@ -192,7 +192,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
     ),
   ),
   t3_thread_configure: McpToolAccess.either(
-    (input) => input.modelSelection === undefined,
+    (input) => input.modelSelection === undefined && input.requestTags === undefined,
     McpToolAccess.reads((input) =>
       Effect.gen(function* () {
         const {
@@ -203,21 +203,40 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
           modelSelection: thread.modelSelection,
           runtimeMode: thread.runtimeMode,
           interactionMode: thread.interactionMode,
+          requestTags: thread.requestTags ?? [],
         };
       }),
     ),
     writesThread((input) =>
       Effect.gen(function* () {
-        const modelSelection = yield* required(input.modelSelection, "modelSelection");
         const {
           threads,
           projection: { thread },
         } = yield* readThread(input.threadId);
-        const type = modelSelectionCommandType(thread.providerInstanceId, modelSelection);
-        const result = yield* threads
-          .dispatch({ type, threadId: thread.id, commandId: yield* newCommandId(), modelSelection })
-          .pipe(Effect.mapError(dispatchFailure));
-        return { sequence: result.sequence };
+        let sequence = 0;
+        if (input.requestTags !== undefined) {
+          sequence = (yield* threads
+            .dispatch({
+              type: "thread.metadata.update",
+              threadId: thread.id,
+              commandId: yield* newCommandId(),
+              requestTags: input.requestTags,
+            })
+            .pipe(Effect.mapError(dispatchFailure))).sequence;
+        }
+        const modelSelection = input.modelSelection;
+        if (modelSelection !== undefined) {
+          const type = modelSelectionCommandType(thread.providerInstanceId, modelSelection);
+          sequence = (yield* threads
+            .dispatch({
+              type,
+              threadId: thread.id,
+              commandId: yield* newCommandId(),
+              modelSelection,
+            })
+            .pipe(Effect.mapError(dispatchFailure))).sequence;
+        }
+        return { sequence };
       }),
     ),
   ),

@@ -1755,6 +1755,7 @@ describe("mobile composer drafts", () => {
               branch: "main",
               worktreePath: null,
             },
+            requestTags: ["team-a"],
           },
         },
       }).drafts,
@@ -1778,6 +1779,7 @@ describe("mobile composer drafts", () => {
         branch: "main",
         worktreePath: null,
       },
+      requestTags: ["team-a"],
       project: {
         environmentId: "environment-1",
         projectId: "project-1",

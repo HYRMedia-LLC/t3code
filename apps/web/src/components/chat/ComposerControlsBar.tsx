@@ -5,6 +5,7 @@ import { type AppModelOption } from "../../modelSelection";
 import { CircleAlertIcon } from "lucide-react";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl } from "./ComposerControl";
+import { ComposerRequestTags } from "./ComposerRequestTags";
 import {
   ComposerPermissionsSection,
   ComposerFooterModeControls,
@@ -88,6 +89,8 @@ export function ComposerControlsBar(props: {
   onModelPickerOpenChange: (open: boolean) => void;
   modelPickerIconClassName: string | undefined;
   getModelDisabledReason: ChatComposerProps["getModelDisabledReason"];
+  /** Present only for LiteLLM instances that carry request tags. */
+  requestTags: { value: string; onCommit: (text: string) => void } | null;
 }) {
   const {
     environmentId,
@@ -136,6 +139,7 @@ export function ComposerControlsBar(props: {
     onModelPickerOpenChange,
     modelPickerIconClassName,
     getModelDisabledReason,
+    requestTags,
   } = props;
   const providerTraitsMenuContent = renderProviderTraitsMenuContent({
     provider: selectedProvider,
@@ -357,6 +361,13 @@ export function ComposerControlsBar(props: {
             onRuntimeModeChange={handleRuntimeModeChange}
           />
         </div>
+        {requestTags ? (
+          <ComposerRequestTags
+            value={requestTags.value}
+            size={composerControlsCollapsed ? "xs" : "sm"}
+            onCommit={requestTags.onCommit}
+          />
+        ) : null}
       </>
     </>
   );

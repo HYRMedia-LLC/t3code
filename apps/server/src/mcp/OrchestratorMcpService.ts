@@ -1867,6 +1867,9 @@ const make = Effect.gen(function* () {
         modelSelection,
         runtimeMode: limits.runtimeMode,
         interactionMode: limits.interactionMode,
+        ...(parent?.thread.requestTags === undefined
+          ? {}
+          : { requestTags: parent.thread.requestTags }),
         createdBy: "agent",
         creationSource: "mcp",
         // Scope the idempotency key by provider session so two callers
@@ -2653,6 +2656,7 @@ const make = Effect.gen(function* () {
                 request.interactionMode,
               );
               yield* assertTargetEnabledForProject(parent, commandId, target);
+              const requestTags = parent.thread.requestTags;
               const title = threadTitle({
                 parentTitle: parent.thread.title,
                 prompt: request.prompt,
@@ -2673,6 +2677,7 @@ const make = Effect.gen(function* () {
                   interactionMode,
                   branch: parent.thread.branch,
                   worktreePath: parent.thread.worktreePath,
+                  ...(requestTags === undefined ? {} : { requestTags }),
                   ...(parent.thread.linkOrigin === undefined
                     ? {}
                     : { linkOrigin: parent.thread.linkOrigin }),

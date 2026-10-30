@@ -1,4 +1,4 @@
-import { isWebhookDedupeTemplate } from "@t3tools/contracts";
+import { isWebhookDedupeTemplate, parseLiteLLMRequestTags } from "@t3tools/contracts";
 import {
   EnvironmentId,
   MAX_WEBHOOK_DELIVERY_AGE_MINUTES,
@@ -73,6 +73,8 @@ export interface DraftState {
   readonly modelKey: string;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
+  /** Raw comma-separated LiteLLM request tags. */
+  readonly requestTags: string;
   /** Retain the source selection's provider options when the picker leaves instanceId:model unchanged. */
   readonly baseModelSelection: ModelSelection | null;
   readonly signatureEnabled: boolean;
@@ -227,6 +229,7 @@ export function taskToDraft(task: ScheduledTask): DraftState {
     modelKey: `${task.modelSelection.instanceId}:${task.modelSelection.model}`,
     runtimeMode: task.runtimeMode,
     interactionMode: task.interactionMode,
+    requestTags: task.requestTags.join(", "),
     baseModelSelection: task.modelSelection,
     ...(schedule.type === "webhook" && schedule.signature !== null
       ? {
@@ -250,6 +253,11 @@ export function taskToDraft(task: ScheduledTask): DraftState {
     filters,
     savedFilters: filters,
   };
+}
+
+/** Tags only apply to supported LiteLLM instances; any other provider saves none. */
+export function draftRequestTags(draft: Pick<DraftState, "requestTags">, supported: boolean) {
+  return supported ? parseLiteLLMRequestTags(draft.requestTags) : [];
 }
 
 export function scheduledTaskDefaultModel(

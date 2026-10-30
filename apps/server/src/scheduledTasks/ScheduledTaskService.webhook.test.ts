@@ -269,7 +269,10 @@ const withService = <A, E>(
 it.effect("dispatches exactly the rendered prompt and logs the delivery", () =>
   withService(({ service, launches }) =>
     Effect.gen(function* () {
-      const { task } = yield* service.upsert(yield* webhookTaskInput());
+      const { task } = yield* service.upsert(
+        yield* webhookTaskInput({ requestTags: ["nightly-review"] }),
+      );
+      assert.deepEqual(task.requestTags, ["nightly-review"]);
       assert.equal(task.nextRunAt, null);
       assert.isDefined(task.webhook);
       assert.isTrue(task.webhook!.path.startsWith("/api/hooks/scheduled-task%3Ahook/"));
@@ -278,6 +281,7 @@ it.effect("dispatches exactly the rendered prompt and logs the delivery", () =>
       const result = yield* service.triggerWebhook(requestFor(task));
       assert.equal(result._tag, "accepted");
       const launched = yield* Queue.take(launches);
+      assert.deepEqual(launched.requestTags, ["nightly-review"]);
       const framed =
         /^Review this PR: <(webhook-data-[0-9a-f]{12})>https:\/\/github\.com\/org\/repo\/pull\/45<\/\1>\n\nText between <\1> and <\/\1> was copied from the webhook request\./;
       const frame = framed.exec(launched.initialMessage?.text ?? "")?.[1];

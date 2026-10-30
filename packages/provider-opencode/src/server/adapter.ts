@@ -939,7 +939,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           ...(options.settings.serverPassword
             ? { serverPassword: options.settings.serverPassword }
             : {}),
-          environment: options.environment,
+          environment: { ...options.environment, ...input.runtimePolicy.launchEnvironment },
         });
         const client = runtime.createOpenCodeSdkClient({
           baseUrl: connection.url,

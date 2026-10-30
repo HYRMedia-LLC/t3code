@@ -51,6 +51,10 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   cwd: Schema.NullOr(Schema.String),
   approvalPolicy: Schema.optional(Schema.Unknown),
   sandboxPolicy: Schema.optional(Schema.Unknown),
+  /** The thread's LiteLLM request tags; only a LiteLLM launcher sends them. */
+  requestTags: Schema.optional(Schema.Array(Schema.String)),
+  /** Extra environment for the harness processes this session spawns. */
+  launchEnvironment: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 });
 export type ProviderAdapterV2RuntimePolicy = typeof ProviderAdapterV2RuntimePolicy.Type;
 

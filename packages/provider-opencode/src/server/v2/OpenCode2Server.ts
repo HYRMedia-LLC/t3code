@@ -6,6 +6,8 @@ import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as P from "effect/Predicate";
 import * as Redacted from "effect/Redacted";
+import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 import * as HttpClientError from "effect/http/HttpClientError";
 
 import * as OpenCodeRuntime from "../OpenCodeRuntime.ts";
@@ -23,8 +25,10 @@ export interface OpenCode2Connection extends OpenCode2Client.OpenCode2Api {
 export class OpenCode2Server extends Context.Service<
   OpenCode2Server,
   {
+    /** A different `launchEnvironment` gets its own spawned server; an external server ignores it. */
     readonly withConnection: <A, E, R>(
       use: (connection: OpenCode2Connection) => Effect.Effect<A, E, R>,
+      launchEnvironment?: Readonly<Record<string, string>>,
     ) => Effect.Effect<A, E | OpenCodeRuntime.OpenCodeRuntimeError, R>;
   }
 >()("@t3tools/provider-opencode/server/v2/OpenCode2Server") {}
@@ -149,20 +153,47 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
   }
 
   const password = yield* generatePassword;
-  const owner = yield* OpenCodeServerOwner.make({
-    binaryPath: input.binaryPath,
-    directory: input.directory,
-    environment: serverEnvironment(input.environment, password),
-    verify: (url) => connectTo(url, password, false).pipe(Effect.flatMap(remember)),
-    ...(input.launchGeneration ? { launchGeneration: input.launchGeneration } : {}),
-  });
+  const scope = yield* Scope.Scope;
+  const runtime = yield* OpenCodeRuntime.OpenCodeRuntime;
+  const verified = new Map<string, OpenCode2Connection>();
+  const owners = new Map<string, OpenCodeServerOwner.OpenCodeServerOwner["Service"]>();
+  const ownersLock = yield* Semaphore.make(1);
+  const ownerFor = (launchEnvironment: Readonly<Record<string, string>> = {}) =>
+    ownersLock.withPermit(
+      Effect.gen(function* () {
+        const key = Object.entries(launchEnvironment)
+          .map(([name, value]) => `${name}=${value}`)
+          .sort()
+          .join("\0");
+        const existing = owners.get(key);
+        if (existing !== undefined) return existing;
+        const owner = yield* OpenCodeServerOwner.make({
+          binaryPath: input.binaryPath,
+          directory: input.directory,
+          environment: serverEnvironment({ ...input.environment, ...launchEnvironment }, password),
+          verify: (url) =>
+            connectTo(url, password, false).pipe(
+              Effect.tap((connection) => Effect.sync(() => verified.set(url, connection))),
+              Effect.map((connection) => connection.version),
+            ),
+          ...(input.launchGeneration ? { launchGeneration: input.launchGeneration } : {}),
+        }).pipe(
+          Effect.provideService(Scope.Scope, scope),
+          Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, runtime),
+        );
+        owners.set(key, owner);
+        return owner;
+      }),
+    );
   return OpenCode2Server.of({
-    withConnection: Effect.fn("OpenCode2Server.withConnection")(function (use) {
-      return owner.withServer((server) =>
-        latest?.url === server.url
-          ? use(latest)
-          : Effect.die(new Error("OpenCode 2 server was lent before verification.")),
-      );
+    withConnection: Effect.fn("OpenCode2Server.withConnection")(function* (use, launchEnvironment) {
+      const owner = yield* ownerFor(launchEnvironment);
+      return yield* owner.withServer((server) => {
+        const connection = verified.get(server.url);
+        return connection === undefined
+          ? Effect.die(new Error("OpenCode 2 server was lent before verification."))
+          : use(connection);
+      });
     }),
   });
 });

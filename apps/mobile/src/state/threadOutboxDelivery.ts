@@ -459,6 +459,9 @@ export async function restoreRejectedQueuedMessage(
                 ? { startFromOrigin: queuedMessage.creation.startFromOrigin }
                 : {}),
             },
+            ...(queuedMessage.creation.requestTags
+              ? { requestTags: queuedMessage.creation.requestTags }
+              : {}),
           }
         : {}),
     });
@@ -1054,6 +1057,7 @@ export function createThreadOutboxDelivery(): {
         worktreePath: workspace.worktreePath,
         startFromOrigin: workspace.startFromOrigin ?? false,
         worktreeBranchName: buildTemporaryWorktreeBranchName(randomHex),
+        ...(creation.requestTags ? { requestTags: creation.requestTags } : {}),
       }),
     });
     if (AsyncResult.isFailure(deliveryResult) && !hasAccess()) return true;
