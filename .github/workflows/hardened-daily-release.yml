@@ -10,6 +10,11 @@ on:
         required: false
         default: false
         type: boolean
+      sync_only:
+        description: "Sync with upstream and skip the release"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: hardened-daily-release
@@ -45,6 +50,7 @@ jobs:
   release:
     name: Release
     needs: sync
+    if: ${{ !inputs.sync_only }}
     runs-on: macos-15
     timeout-minutes: 90
     env:
