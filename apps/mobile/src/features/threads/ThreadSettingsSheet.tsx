@@ -71,6 +71,7 @@ import { IconButton } from "../../components/ui/IconButton";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
 import { cn } from "../../lib/cn";
+import { useReduceMotionEnabled } from "../../lib/appState";
 import {
   buildModelOptions,
   groupByProvider,
@@ -624,12 +625,10 @@ function ThreadSettingsSessionProvider(
           props.onPromptChange(change.prompt);
         }
       }
-      if (!("modelOptions" in change)) return;
     }
-    const next =
-      change && "modelOptions" in change
-        ? (change.modelOptions ?? [])
-        : applyProviderOptionSelection(displayedDescriptors, { id, value });
+    const next = change
+      ? (change.modelOptions ?? [])
+      : applyProviderOptionSelection(displayedDescriptors, { id, value });
     if (!next) {
       return;
     }
@@ -1034,7 +1033,8 @@ function ThreadSettingsMainContent(props: {
   const [listLoaded, setListLoaded] = useState(false);
   // Android can drop the first frame of a reduced-motion fade, leaving rows invisible.
   const reducedMotion = useReducedMotion();
-  const animationsReady = listLoaded && !reducedMotion;
+  const reduceMotionEnabled = useReduceMotionEnabled();
+  const animationsReady = listLoaded && !reducedMotion && !reduceMotionEnabled;
   const catalogItems = buildThreadSettingsCatalogItems(session);
   const hasActiveCatalogFilter =
     session.providerFilter !== null || session.searchQuery.trim().length > 0;
