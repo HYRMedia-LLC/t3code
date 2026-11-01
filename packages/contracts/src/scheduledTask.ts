@@ -1,4 +1,3 @@
-import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
@@ -208,7 +207,7 @@ export const ScheduledTask = Schema.Struct({
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
-  requestTags: LiteLLMRequestTags.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  requestTags: Schema.optional(LiteLLMRequestTags),
   createdBy: OrchestrationV2Actor,
   creationSource: OrchestrationV2CreationSource,
   createdAt: IsoDateTime,
