@@ -35,16 +35,17 @@ jobs:
     outputs:
       resolved: ${{ steps.resolve.outputs.resolved }}
     steps:
+      # No credential on disk. actions/checkout cannot do this here: removing its credential runs
+      # git submodule foreach, which fails on the .repos gitlinks. The repository is public.
       - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.branch }}
-          fetch-depth: 0
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          git init --quiet .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git fetch --quiet --no-tags origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+          git checkout --quiet -B "$BRANCH" "origin/$BRANCH"
 
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
@@ -81,16 +82,17 @@ jobs:
       contents: read
       pull-requests: write
     steps:
+      # No credential on disk. actions/checkout cannot do this here: removing its credential runs
+      # git submodule foreach, which fails on the .repos gitlinks. The repository is public.
       - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.branch }}
-          fetch-depth: 0
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          git init --quiet .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git fetch --quiet --no-tags origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+          git checkout --quiet -B "$BRANCH" "origin/$BRANCH"
 
       - name: Download the merge
         uses: actions/download-artifact@v8
