@@ -1,4 +1,5 @@
 import {
+  LiteLLMRequestTags,
   CommandId,
   MessageId,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
@@ -176,9 +177,7 @@ const decodeWorkspaceStrategyJson = Schema.decodeUnknownEffect(
 const decodeModelSelectionJson = Schema.decodeUnknownEffect(
   Schema.fromJsonString(ScheduledTask.fields.modelSelection),
 );
-const decodeRequestTagsJson = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(ScheduledTask.fields.requestTags),
-);
+const decodeRequestTagsJson = Schema.decodeUnknownEffect(Schema.fromJsonString(LiteLLMRequestTags));
 const HeadersJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String));
 const MissingFieldsJson = Schema.fromJsonString(Schema.Array(Schema.String));
 const decodeHeadersJson = Schema.decodeUnknownOption(HeadersJson);
@@ -593,7 +592,7 @@ export const layer = Layer.effect(
           ${JSON.stringify(task.modelSelection)},
           ${task.runtimeMode},
           ${task.interactionMode},
-          ${JSON.stringify(task.requestTags)},
+          ${JSON.stringify(task.requestTags ?? [])},
           ${task.createdBy},
           ${task.creationSource},
           ${task.createdAt},
@@ -879,7 +878,7 @@ export const layer = Layer.effect(
                     modelSelection: active.modelSelection,
                     runtimeMode: active.runtimeMode,
                     interactionMode: active.interactionMode,
-                    requestTags: active.requestTags,
+                    requestTags: active.requestTags ?? [],
                     workspaceStrategy: active.workspaceStrategy,
                     initialMessage: {
                       messageId,

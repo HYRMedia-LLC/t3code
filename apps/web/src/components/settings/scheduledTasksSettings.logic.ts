@@ -229,7 +229,7 @@ export function taskToDraft(task: ScheduledTask): DraftState {
     modelKey: `${task.modelSelection.instanceId}:${task.modelSelection.model}`,
     runtimeMode: task.runtimeMode,
     interactionMode: task.interactionMode,
-    requestTags: task.requestTags.join(", "),
+    requestTags: (task.requestTags ?? []).join(", "),
     baseModelSelection: task.modelSelection,
     ...(schedule.type === "webhook" && schedule.signature !== null
       ? {
