@@ -1,0 +1,107 @@
+name: Hardened Sync Resolve
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        required: false
+        default: main
+        type: string
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: true
+      SYNC_APP_ID:
+        required: true
+      SYNC_APP_PRIVATE_KEY:
+        required: true
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to merge upstream into"
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # The agent reads upstream's text and runs its code, so this job holds no write credential.
+  resolve:
+    name: Resolve conflicts
+    if: github.repository == 'HYRMedia-LLC/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      resolved: ${{ steps.resolve.outputs.resolved }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 0
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+
+      - name: Install Claude Code
+        run: |
+          npm install --prefix "$RUNNER_TEMP/claude-code" @anthropic-ai/claude-code@2.1.316
+          echo "$RUNNER_TEMP/claude-code/node_modules/.bin" >>"$GITHUB_PATH"
+
+      - id: resolve
+        name: Merge upstream and resolve conflicts
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: .github/hardened/resolve-sync.sh "$RUNNER_TEMP/sync"
+
+      - name: Upload the merge
+        if: steps.resolve.outputs.resolved == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: sync-merge
+          path: ${{ runner.temp }}/sync
+          if-no-files-found: error
+          include-hidden-files: true
+
+  # A new runner holds the App token and treats the merge as data.
+  land:
+    name: Land after CI
+    needs: resolve
+    if: needs.resolve.outputs.resolved == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 0
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Download the merge
+        uses: actions/download-artifact@v8
+        with:
+          name: sync-merge
+          path: ${{ runner.temp }}/sync
+
+      - id: sync_token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.SYNC_APP_ID }}
+          private-key: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
+
+      - name: Check, run CI, and land
+        env:
+          GH_TOKEN: ${{ steps.sync_token.outputs.token }}
+          BRANCH: ${{ inputs.branch }}
+        run: .github/hardened/land-sync.sh "$RUNNER_TEMP/sync" "$BRANCH"
