@@ -60,6 +60,10 @@ jobs:
     name: Resolve conflicts
     needs: sync
     if: needs.sync.outputs.conflict == 'true'
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
     uses: ./.github/workflows/hardened-sync-resolve.yml
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

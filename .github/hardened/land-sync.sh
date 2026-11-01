@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# Check a merge from resolve-sync.sh, run full CI on it through a pull request, and fast-forward
-# the target branch. A fast-forward keeps upstream's ancestry, which a squash or rebase merge loses.
-# This job holds the write credential, so it treats the merge as data and never runs its code.
+# Check a merge from resolve-sync.sh, run full CI on it, and fast-forward the target branch.
+# A fast-forward keeps upstream's ancestry, which a squash or rebase merge loses. This job holds
+# the write credential, so it treats the merge as data and never runs its code.
 #
 # Usage: land-sync.sh <input-dir> <branch>
-#   needs GH_TOKEN with contents, workflows, and pull requests write
+#   PUSH_TOKEN  contents and workflows write. Its push starts CI on the sync branch.
+#   GH_TOKEN    pull requests write and actions read. A pull request from GITHUB_TOKEN starts no
+#               CI, so the pull request only shows the merge and keeps a failed one open.
 set -euo pipefail
 
 IN="$1"
 BRANCH="$2"
 UPSTREAM="https://github.com/pingdotgg/t3code.git"
-PUSH_URL="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+PUSH_URL="https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 fail() { echo "::error::$1"; exit 1; }
 
 git fetch --quiet --no-tags "$UPSTREAM" main:refs/remotes/upstream/main
@@ -75,7 +77,7 @@ echo "Opened $pr"
 
 run=""
 for _ in {1..40}; do
-  run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$merge&event=pull_request" \
+  run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$merge&event=push" \
     --jq '.workflow_runs[] | select(.path == ".github/workflows/ci.yml") | .id' | head -n 1)"
   [[ -n "$run" ]] && break
   sleep 15
