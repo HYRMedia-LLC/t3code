@@ -100,7 +100,7 @@ export function detectComposerTrigger(
       };
     }
 
-    const modelMatch = /^\/model(?:\s+(.*))?$/.exec(linePrefix);
+    const modelMatch = /^\/models?(?:\s+(.*))?$/.exec(linePrefix);
     if (modelMatch) {
       return {
         kind: "slash-model",
