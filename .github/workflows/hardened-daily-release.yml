@@ -2,7 +2,7 @@ name: Hardened Daily Release
 
 on:
   schedule:
-    - cron: "17 9 * * *"
+    - cron: "23 9 * * *"
   workflow_dispatch:
     inputs:
       force:
