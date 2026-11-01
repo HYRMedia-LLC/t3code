@@ -76,6 +76,10 @@ jobs:
     if: needs.resolve.outputs.resolved == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -102,6 +106,7 @@ jobs:
 
       - name: Check, run CI, and land
         env:
-          GH_TOKEN: ${{ steps.sync_token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
+          PUSH_TOKEN: ${{ steps.sync_token.outputs.token }}
           BRANCH: ${{ inputs.branch }}
         run: .github/hardened/land-sync.sh "$RUNNER_TEMP/sync" "$BRANCH"
