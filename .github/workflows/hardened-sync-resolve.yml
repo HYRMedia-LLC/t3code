@@ -50,10 +50,14 @@ jobs:
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
 
+      # Claude Code needs bubblewrap to keep the API key out of the agent's commands. Ubuntu 24.04
+      # blocks the user namespaces that bubblewrap needs.
       - name: Install Claude Code
         run: |
           npm install --prefix "$RUNNER_TEMP/claude-code" @anthropic-ai/claude-code@2.1.316
           echo "$RUNNER_TEMP/claude-code/node_modules/.bin" >>"$GITHUB_PATH"
+          sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - id: resolve
         name: Merge upstream and resolve conflicts
