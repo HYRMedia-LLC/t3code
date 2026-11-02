@@ -132,6 +132,15 @@ export function resolveClaudeModelSlug(catalog: ClaudeModelCatalog, slugOrAlias:
   return resolveClaudeCatalogModel(catalog, slugOrAlias)?.model.slug ?? slugOrAlias;
 }
 
+/** Maps Bedrock gateway IDs such as `bedrock/us.anthropic.claude-opus-5-5-v1:0` to catalog slugs. */
+export function claudeGatewayModelSlug(gatewayId: string): string {
+  return gatewayId
+    .slice(gatewayId.lastIndexOf("/") + 1)
+    .replace(/^(?:[a-z]+\.)?anthropic\./, "")
+    .replace(/-v\d+(?::\d+)?$/, "")
+    .replace(/-\d{8}$/, "");
+}
+
 export function getClaudeCatalogModelCapabilities(
   catalog: ClaudeModelCatalog,
   slugOrAlias: string | null | undefined,

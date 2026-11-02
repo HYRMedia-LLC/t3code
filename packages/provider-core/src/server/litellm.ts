@@ -202,10 +202,24 @@ const mergeGatewayModels = (
   current: ReadonlyArray<ServerProviderModel>,
   gatewayIds: ReadonlyArray<string>,
   capabilities: ModelCapabilities | null,
+  catalogSlug: (gatewayId: string) => string,
 ): ReadonlyArray<ServerProviderModel> => {
   const known = new Map(current.map((model) => [model.slug, model]));
+  const byName = new Map<string, ServerProviderModel>();
+  for (const model of current) {
+    if (model.isCustom) continue;
+    for (const name of [model.slug, ...(model.aliases ?? [])]) {
+      if (!byName.has(name.toLowerCase())) byName.set(name.toLowerCase(), model);
+    }
+  }
   const gateway = gatewayIds.map(
-    (id) => known.get(id) ?? { slug: id, name: id, isCustom: false, capabilities },
+    (id) =>
+      known.get(id) ?? {
+        slug: id,
+        name: id,
+        isCustom: false,
+        capabilities: byName.get(catalogSlug(id).toLowerCase())?.capabilities ?? capabilities,
+      },
   );
   const listed = new Set(gatewayIds);
   return [...gateway, ...current.filter((model) => model.isCustom && !listed.has(model.slug))];
@@ -219,6 +233,7 @@ export const applyLiteLLMStatus = (
   snapshot: ServerProvider,
   status: LiteLLMStatus,
   gatewayModelCapabilities: ModelCapabilities | null | undefined,
+  gatewayModelSlug: (gatewayId: string) => string = (gatewayId) => gatewayId,
 ): ServerProvider => {
   const authenticated = status.auth.status === "authenticated";
   const ownsCatalog = gatewayModelCapabilities !== undefined;
@@ -232,6 +247,7 @@ export const applyLiteLLMStatus = (
             snapshot.models,
             status.models ?? [],
             gatewayModelCapabilities,
+            gatewayModelSlug,
           ),
         }
       : {}),
@@ -306,6 +322,8 @@ export interface LiteLLMLauncherSpec<Config> {
   readonly homeEnvironment?: (homeDir: string) => Record<string, string>;
   /** Set when T3 owns the model catalog (Claude); other harnesses list what `lite` syncs. */
   readonly gatewayModelCapabilities?: ModelCapabilities | null;
+  /** Maps a gateway model ID to a catalog slug or alias so it keeps catalog capabilities. */
+  readonly gatewayModelSlug?: (gatewayId: string) => string;
   /** Aliases the harness resolves to a listed model; exact slugs always count. */
   readonly servesModel?: (model: ServerProviderModel, requested: string) => boolean;
 }
@@ -646,7 +664,7 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
     const instance = yield* driver.create({ ...input, config, environment, launchGeneration });
     yield* Deferred.succeed(innerSnapshot, instance.snapshot);
     const snapshot = wrapSnapshot(instance.snapshot, status, freshStatus, (current, liteStatus) =>
-      applyLiteLLMStatus(current, liteStatus, spec.gatewayModelCapabilities),
+      applyLiteLLMStatus(current, liteStatus, spec.gatewayModelCapabilities, spec.gatewayModelSlug),
     );
     const auth = yield* makeLiteLLMAuth({
       instanceId: input.instanceId,

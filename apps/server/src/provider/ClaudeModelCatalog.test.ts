@@ -3,6 +3,7 @@ import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
 
 import { resolveProviderCatalog, type ModelManifestData } from "./ModelManifest.ts";
 import {
+  claudeGatewayModelSlug,
   formatClaudeVersionUpgradeMessage,
   normalizeClaudeCatalogEffort,
   resolveClaudeCatalogApiModelId,
@@ -168,6 +169,14 @@ describe("Claude model catalog", () => {
       }),
       "claude-synthetic-next[large]",
     );
+    for (const [gatewayId, slug] of [
+      ["bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0", "claude-sonnet-4-5"],
+      ["global.anthropic.claude-opus-5-5-v1", "claude-opus-5-5"],
+      ["anthropic.claude-haiku-4-5-20251001-v1:0", "claude-haiku-4-5"],
+      ["claude-opus-5-5", "claude-opus-5-5"],
+    ]) {
+      assert.strictEqual(claudeGatewayModelSlug(gatewayId!), slug);
+    }
   });
 
   it("appends custom models with their own descriptors and keeps bare slugs opaque", () => {

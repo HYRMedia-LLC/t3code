@@ -46,6 +46,11 @@ import { spawnAndCollect } from "./snapshotProbe.ts";
 
 const windowsHost = HostProcess.Platform.defaultValue() === "win32";
 const capabilities = createModelCapabilities({ optionDescriptors: [] });
+const sonnetCapabilities = createModelCapabilities({
+  optionDescriptors: [
+    { id: "effort", label: "Reasoning", type: "select", options: [{ id: "high", label: "High" }] },
+  ],
+});
 const instanceId = ProviderInstanceId.make("litellm_claude");
 
 const snapshot = (overrides: Partial<ServerProvider> = {}): ServerProvider => ({
@@ -58,7 +63,13 @@ const snapshot = (overrides: Partial<ServerProvider> = {}): ServerProvider => ({
   auth: { status: "authenticated" },
   checkedAt: "2026-01-01T00:00:00.000Z",
   models: [
-    { slug: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", isCustom: false, capabilities },
+    {
+      slug: "claude-sonnet-4-5",
+      name: "Claude Sonnet 4.5",
+      isCustom: false,
+      aliases: ["sonnet-4.5"],
+      capabilities: sonnetCapabilities,
+    },
     { slug: "my-alias", name: "My alias", isCustom: true, capabilities: null },
   ],
   slashCommands: [],
@@ -70,18 +81,24 @@ describe("applyLiteLLMStatus", () => {
   it("lists gateway models, keeping known entries and user custom models", () => {
     const result = applyLiteLLMStatus(
       snapshot(),
-      { auth: { status: "authenticated" }, models: ["gpt-5", "claude-sonnet-4-5"] },
+      {
+        auth: { status: "authenticated" },
+        models: ["gpt-5", "claude-sonnet-4-5", "bedrock/sonnet-4.5"],
+      },
       capabilities,
+      (id) => id.replace(/^bedrock\//, ""),
     );
     assert.deepEqual(
       result.models.map((model) => [model.slug, model.name, model.isCustom]),
       [
         ["gpt-5", "gpt-5", false],
         ["claude-sonnet-4-5", "Claude Sonnet 4.5", false],
+        ["bedrock/sonnet-4.5", "bedrock/sonnet-4.5", false],
         ["my-alias", "My alias", true],
       ],
     );
     assert.strictEqual(result.models[0]?.capabilities, capabilities);
+    assert.strictEqual(result.models[2]?.capabilities, sonnetCapabilities);
   });
 
   it("reports the gateway sign-in instead of the harness's own account", () => {

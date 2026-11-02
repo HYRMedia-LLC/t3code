@@ -6,6 +6,7 @@ import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
 import { codexModelFamily } from "@t3tools/shared/model";
 import * as Effect from "effect/Effect";
 
+import { claudeGatewayModelSlug } from "./ClaudeModelCatalog.ts";
 import { DEFAULT_CLAUDE_MODEL_CAPABILITIES } from "./ClaudeProvider.ts";
 import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
 
@@ -37,6 +38,7 @@ export const LITELLM_CLAUDE: LiteLLMLauncherSpec<ClaudeSettings> = {
   harness: "claude",
   configure: (config, launch) => Effect.succeed({ ...config, binaryPath: launch.binaryPath }),
   gatewayModelCapabilities: DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+  gatewayModelSlug: claudeGatewayModelSlug,
 };
 
 export const LITELLM_OPENCODE: LiteLLMLauncherSpec<OpenCodeSettings> = {
