@@ -51,6 +51,11 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   cwd: Schema.NullOr(Schema.String),
   approvalPolicy: Schema.optional(Schema.Unknown),
   sandboxPolicy: Schema.optional(Schema.Unknown),
+  /**
+   * The administrator's ceiling, when a managed policy sets one. `runtimeMode` is already under
+   * it; adapters use it to refuse native mode choices a user makes beside T3 Code's own.
+   */
+  maxRuntimeMode: Schema.optional(RuntimeMode),
   /** The thread's LiteLLM request tags; only a LiteLLM launcher sends them. */
   requestTags: Schema.optional(Schema.Array(Schema.String)),
   /** Extra environment for the harness processes this session spawns. */
@@ -158,6 +163,7 @@ export const ProviderAdapterV2Event = Schema.Union([
     runOrdinal: PositiveInt,
     status: Schema.Literals(["completed", "interrupted", "cancelled"]),
     failure: Schema.Null,
+    reason: Schema.optional(Schema.String),
     threadDisposition: Schema.Literals(["reusable", "broken"]),
   }),
   Schema.Struct({
@@ -503,6 +509,7 @@ export type ProviderAdapterV2RollbackTarget =
       readonly checkpointId: CheckpointId;
       readonly appRunOrdinal: number;
       readonly providerTurn: OrchestrationV2ProviderTurn;
+      readonly message?: Pick<OrchestrationV2ConversationMessage, "role" | "text" | "attachments">;
     };
 
 export interface ProviderAdapterV2RollbackThreadInput {

@@ -124,6 +124,8 @@ import { ModelRow, ChoiceRow } from "./ThreadSettingsRows";
 import {
   compatibleRuntimeModeForChoices,
   runtimeModeChoicesForSupportedModes,
+  withManagedRuntimeModeLimits,
+  type RuntimeModeChoice,
   selectableChoices,
 } from "./thread-settings-options";
 import {
@@ -367,7 +369,7 @@ type ThreadSettingsSessionValue = {
   readonly manageHidden: boolean;
   readonly setManageHidden: (value: boolean) => void;
   readonly runtimeMode: RuntimeMode;
-  readonly runtimeModeChoices: ReturnType<typeof runtimeModeChoicesForSupportedModes>;
+  readonly runtimeModeChoices: ReadonlyArray<RuntimeModeChoice>;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
   readonly requestTags: ThreadSettingsSessionProps["requestTags"];
   readonly requestTagRows: ReturnType<typeof requestTagFieldRows>;
@@ -576,8 +578,9 @@ function ThreadSettingsSessionProvider(
     pendingModel ??
     props.providerGroups.flatMap((group) => group.models).find((option) => isApplied(option)) ??
     null;
-  const runtimeModeChoices = runtimeModeChoicesForSupportedModes(
-    displayedModel?.supportedRuntimeModes,
+  const runtimeModeChoices = withManagedRuntimeModeLimits(
+    runtimeModeChoicesForSupportedModes(displayedModel?.supportedRuntimeModes),
+    [config?.managedPolicy],
   );
   const compatibleRuntimeMode = compatibleRuntimeModeForChoices(
     props.runtimeMode,
@@ -1188,7 +1191,8 @@ function ThreadSettingsChoiceContent(props: {
           rows: session.runtimeModeChoices.map((choice) => ({
             id: choice.mode,
             label: choice.label,
-            description: choice.description,
+            description: choice.disabledReason ?? choice.description,
+            disabled: choice.disabledReason !== undefined,
             selected: choice.mode === session.runtimeMode,
             onPress: () => {
               void Haptics.selectionAsync();
@@ -1203,6 +1207,7 @@ function ThreadSettingsChoiceContent(props: {
               id: choice.id,
               label: choice.label,
               description: choice.description,
+              disabled: false,
               selected:
                 choice.id ===
                 (session.promptTraits.ultrathinkPromptControlled &&
@@ -1260,6 +1265,7 @@ function ThreadSettingsChoiceContent(props: {
             isLast={index === submenuContent.rows.length - 1}
             label={row.label}
             selected={row.selected}
+            disabled={row.disabled}
             onPress={row.onPress}
           />
         ))}
