@@ -83,7 +83,7 @@ describe("applyLiteLLMStatus", () => {
       snapshot(),
       {
         auth: { status: "authenticated" },
-        models: ["gpt-5", "claude-sonnet-4-5", "bedrock/sonnet-4.5"],
+        models: ["gpt-5", "claude-sonnet-4-5", "bedrock/sonnet-4.5", "claude sonnet 4.5"],
       },
       capabilities,
       (id) => id.replace(/^bedrock\//, ""),
@@ -94,11 +94,13 @@ describe("applyLiteLLMStatus", () => {
         ["gpt-5", "gpt-5", false],
         ["claude-sonnet-4-5", "Claude Sonnet 4.5", false],
         ["bedrock/sonnet-4.5", "bedrock/sonnet-4.5", false],
+        ["claude sonnet 4.5", "claude sonnet 4.5", false],
         ["my-alias", "My alias", true],
       ],
     );
     assert.strictEqual(result.models[0]?.capabilities, capabilities);
     assert.strictEqual(result.models[2]?.capabilities, sonnetCapabilities);
+    assert.strictEqual(result.models[3]?.capabilities, sonnetCapabilities);
   });
 
   it("reports the gateway sign-in instead of the harness's own account", () => {

@@ -208,7 +208,7 @@ const mergeGatewayModels = (
   const byName = new Map<string, ServerProviderModel>();
   for (const model of current) {
     if (model.isCustom) continue;
-    for (const name of [model.slug, ...(model.aliases ?? [])]) {
+    for (const name of [model.slug, model.name, ...(model.aliases ?? [])]) {
       if (!byName.has(name.toLowerCase())) byName.set(name.toLowerCase(), model);
     }
   }
