@@ -3,6 +3,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -18,6 +19,7 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -45,6 +47,7 @@ import * as ProviderHost from "./ProviderHost.ts";
 import { spawnAndCollect } from "./snapshotProbe.ts";
 
 const windowsHost = HostProcess.Platform.defaultValue() === "win32";
+const testServices = Layer.mergeAll(NodeServices.layer, NodeCrypto.layer);
 const capabilities = createModelCapabilities({ optionDescriptors: [] });
 const sonnetCapabilities = createModelCapabilities({
   optionDescriptors: [
@@ -394,7 +397,7 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
       assert.equal((yield* run(["--version"])).stdout.trim(), "2.1.0 (Claude Code)");
       assert.include((yield* run(["--print", "hi"])).stdout, "lite-ran claude --print hi");
       assert.notInclude(fixture.calls().join("\n"), "--version");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.live("signs in with lite login, then reports the gateway account and models", () =>
@@ -433,7 +436,7 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
         });
       }
       assert.deepEqual(titleModels, ["gpt-5", "my-alias", "alias"]);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.live("lets lite opencode inject its gateway unless the user set an OpenCode config", () =>
@@ -450,7 +453,7 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
         );
       assert.include((yield* run("{}")).stdout, "OPENCODE_CONFIG_CONTENT=unset");
       assert.include((yield* run('{"model":"x"}')).stdout, 'OPENCODE_CONFIG_CONTENT={"model":"x"}');
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.live("renews the key before a session starts inside lite's renewal window", () =>
@@ -468,7 +471,7 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
       const renewing = (yield* createLiteLLMInstance(fixture, [])).orchestrationAdapter
         .launchGeneration!;
       assert.equal(yield* renewing, `${farExpiry + 86_400}:gpt-5`);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.live("starts a new generation when the gateway's model list changes", () =>
@@ -487,7 +490,7 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
       );
       const after = yield* instance.orchestrationAdapter.launchGeneration!;
       assert.notEqual(after, before);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.live("reports a failed renewal as a sign-out instead of keeping the old generation", () =>
@@ -498,7 +501,7 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
       assert.isUndefined(yield* instance.orchestrationAdapter.launchGeneration!);
       const current = yield* instance.snapshot.getSnapshot;
       assert.deepEqual([current.auth.status, current.status], ["unauthenticated", "error"]);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.live("opens one session per thread and refuses what the gateway cannot serve", () =>
@@ -535,7 +538,7 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
         "no longer serves claude-sonnet-4-5",
       );
       assert.deepEqual(startedTurns, ["gpt-5"]);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.live("tags each session with the repository and the thread's own tags", () =>
@@ -571,7 +574,7 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
         "repo:widgets,project:general-admin,tool:T3-Code/claude",
         "project:general-admin,tool:T3-Code/claude",
       ]);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.live("follows the default tag setting, which a live session must notice", () =>
@@ -602,7 +605,7 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
       assert.deepEqual(yield* tagsWith({ mode: "off", custom: "" }), ["", "project:billing"]);
       const pi = yield* createLiteLLMInstance(fixture, [], { harness: "pi" });
       assert.isUndefined(pi.orchestrationAdapter.launchTags);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.live("turns the session's tags into each harness's header setting", () =>
@@ -630,7 +633,7 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
       );
       assert.include(yield* run("codex", undefined), "lite-ran codex app-server");
       assert.include(yield* run("opencode", "acme"), "opencode-request-tags.json");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.live("rejects a lite CLI older than the minimum", () =>
@@ -640,6 +643,6 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
       const instance = yield* createLiteLLMInstance(fixture, []);
       const current = yield* instance.snapshot.getSnapshot;
       assert.include(current.message, "LiteLLM CLI 1.90.0 is too old");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 });

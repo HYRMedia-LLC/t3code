@@ -21,7 +21,7 @@ import { parseGitRemoteRepository } from "@t3tools/shared/git";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Clock from "effect/Clock";
-import type * as Crypto from "effect/Crypto";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -334,7 +334,7 @@ export type LiteLLMLauncherEnv =
   | FileSystem.FileSystem
   | Path.Path
   | HttpClient.HttpClient
-  | Crypto.Crypto;
+  | SecureRandom.SecureRandom;
 
 const makeLiteLLMAuth = Effect.fn("LiteLLM.makeAuth")(function* (input: {
   readonly instanceId: ProviderInstanceId;
