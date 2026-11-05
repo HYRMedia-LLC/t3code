@@ -80,7 +80,7 @@ const LITELLM_REQUEST_TAG_DRIVERS: ReadonlySet<string> = new Set([
   "opencode",
 ]);
 
-/** LiteLLM tags reach the gateway through Claude, Codex and OpenCode; Pi has no tag channel. */
+/** LiteLLM tags reach the gateway through Claude, Codex and OpenCode. */
 export function supportsLiteLLMRequestTags(
   settings: Pick<UnifiedSettings, "providerInstances">,
   instanceId: ProviderInstanceId,

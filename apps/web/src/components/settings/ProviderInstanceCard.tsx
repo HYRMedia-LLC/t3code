@@ -1287,7 +1287,7 @@ export function ProviderInstanceCard({
             </div>
           }
         />
-        {LITELLM_LAUNCHER_DRIVERS.has(instance.driver) ? (
+        {LITELLM_LAUNCHER_DRIVERS.has(instance.driver) || instance.launcher === "litellm" ? (
           <SettingsRow
             title={
               <label htmlFor={`provider-instance-${instanceId}-litellm`}>

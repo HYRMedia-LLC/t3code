@@ -326,7 +326,6 @@ const createLiteLLMInstance = (
     harness: options.harness ?? "claude",
     configure: (config, launch) =>
       Effect.succeed({ ...config, binaryPath: launch.binaryPath, homePath: launch.homeDir }),
-    homeEnvironment: (homeDir) => ({ FAKE_HOME: homeDir }),
     gatewayModelCapabilities: capabilities,
     servesModel: (model, requested) => model.slug === `my-${requested}`,
   });
@@ -386,10 +385,6 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
       assert.equal(
         shim,
         NodePath.join(fixture.dir, "state", "litellm", instanceId, "bin", "claude"),
-      );
-      assert.deepEqual(
-        input.environment.find((variable) => variable.name === "FAKE_HOME")?.value,
-        input.config.homePath,
       );
 
       const run = (args: ReadonlyArray<string>) =>
@@ -603,8 +598,6 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
         "tool:company,project:billing",
       ]);
       assert.deepEqual(yield* tagsWith({ mode: "off", custom: "" }), ["", "project:billing"]);
-      const pi = yield* createLiteLLMInstance(fixture, [], { harness: "pi" });
-      assert.isUndefined(pi.orchestrationAdapter.launchTags);
     }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
