@@ -29,6 +29,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
   /** Marks this instance apart from another of the same provider. */
   showInstanceBadge: boolean;
   showNewBadge?: boolean;
+  /** Served by a LiteLLM gateway rather than the harness's own catalog. */
+  showGatewayBadge?: boolean;
   unavailable?: boolean;
   jumpLabel?: string | null;
   disabledReason?: string | null;
@@ -92,6 +94,11 @@ export const ModelListRow = memo(function ModelListRow(props: {
           >
             New
           </span>
+        ) : null}
+        {props.showGatewayBadge ? (
+          <Badge variant="outline" size="sm" aria-label="Served by the LiteLLM gateway">
+            LiteLLM
+          </Badge>
         ) : null}
         {props.unavailable ? (
           <Badge variant="outline" size="sm">

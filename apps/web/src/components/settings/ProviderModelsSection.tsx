@@ -532,6 +532,9 @@ function ProviderModelRow({
         {model.isCustom ? (
           <span className="shrink-0 text-2xs text-muted-foreground/70">custom</span>
         ) : null}
+        {model.gateway === "litellm" ? (
+          <span className="shrink-0 text-2xs text-muted-foreground/70">LiteLLM</span>
+        ) : null}
       </span>
       <span className="text-2xs text-muted-foreground/70">
         {capLabels.length > 0 ? (

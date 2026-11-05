@@ -45,6 +45,10 @@ full URL and paste it in T3 Code when it asks.
 - **LiteLLM Codex** and **LiteLLM OpenCode** list the models that `lite` syncs into those
   harnesses.
 
+In the model picker and in **Settings > Providers**, a **LiteLLM** label marks each model the
+gateway serves. A model without the label comes from the harness's own list. LiteLLM OpenCode
+sends those models to their usual provider, not to the gateway.
+
 T3 Code checks the gateway's model list at most once a minute, and **Refresh** in
 **Settings > Providers** checks it now. If the gateway removes the model a thread uses, the
 model picker marks it unavailable and the next message fails until you select another model.

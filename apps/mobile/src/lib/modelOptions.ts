@@ -40,6 +40,8 @@ export type ModelOption = {
   };
   readonly isDefault: boolean;
   readonly isLegacy: boolean;
+  /** Served by a LiteLLM gateway rather than the harness's own catalog. */
+  readonly isGateway?: boolean;
   readonly isUnavailable?: boolean;
   readonly isHidden?: boolean;
   readonly canHide?: boolean;
@@ -381,6 +383,7 @@ export function buildModelOptions(
         canHide: !model.isCustom,
         isDefault: model.isDefault === true,
         isLegacy: model.isLegacy === true,
+        ...(model.gateway ? { isGateway: true } : {}),
         ...(updateRequired ? { providerUpdateRequired: updateRequired } : {}),
         capabilities: model.capabilities,
         selection: normalizeSelectionOptions(
@@ -444,6 +447,7 @@ export function buildModelOptions(
         providerBadge: providerBadgeFor(fallbackModelSelection.instanceId),
         isDefault: false,
         isLegacy: model?.isLegacy === true,
+        ...(model?.gateway ? { isGateway: true } : {}),
         ...(isModelSelectionUnavailable(config, fallbackModelSelection, projectId) ||
         (provider !== undefined && !isProviderEnabledForProject(config, provider, projectId)) ||
         provider?.updateRequiredModels?.some((gated) => gated.slug === fallbackModelSelection.model)

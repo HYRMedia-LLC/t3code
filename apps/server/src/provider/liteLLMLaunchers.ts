@@ -40,10 +40,17 @@ export const LITELLM_CLAUDE: LiteLLMLauncherSpec<ClaudeSettings> = {
   gatewayModelSlug: claudeGatewayModelSlug,
 };
 
+const OPENCODE_GATEWAY_PREFIX = "litellm/";
+
 export const LITELLM_OPENCODE: LiteLLMLauncherSpec<OpenCodeSettings> = {
   harness: "opencode",
   configure: (config, launch) =>
     config.serverUrl
       ? Effect.fail("Clear Server URL: LiteLLM can only route an OpenCode server T3 starts.")
       : Effect.succeed({ ...config, binaryPath: launch.binaryPath }),
+  // `lite opencode` adds the gateway as the `litellm` provider; other providers stay direct.
+  listedModelGatewayId: (slug) =>
+    slug.startsWith(OPENCODE_GATEWAY_PREFIX)
+      ? slug.slice(OPENCODE_GATEWAY_PREFIX.length)
+      : undefined,
 };
