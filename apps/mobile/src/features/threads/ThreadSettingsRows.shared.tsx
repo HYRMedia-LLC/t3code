@@ -80,6 +80,11 @@ export function ModelRowContent(
                 <Text className="text-3xs font-t3-bold text-foreground-muted">Legacy</Text>
               </View>
             ) : null}
+            {props.option.isGateway ? (
+              <View className="rounded-md bg-subtle px-1.5 py-0.5">
+                <Text className="text-3xs font-t3-bold text-foreground-muted">LiteLLM</Text>
+              </View>
+            ) : null}
             {props.option.isHidden ? (
               <Text className="text-xs text-foreground-muted">Hidden</Text>
             ) : null}

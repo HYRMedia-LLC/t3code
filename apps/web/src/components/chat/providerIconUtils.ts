@@ -10,6 +10,7 @@ export type ModelEsque = {
   isDefault?: boolean | undefined;
   badge?: "new" | undefined;
   isLegacy?: boolean | undefined;
+  gateway?: "litellm" | undefined;
   isUnavailable?: boolean | undefined;
 };
 

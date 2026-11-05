@@ -70,6 +70,7 @@ export interface AppModelOption {
   isCustom: boolean;
   isDefault?: boolean;
   isLegacy?: boolean;
+  gateway?: "litellm";
   isUnavailable?: boolean;
 }
 
@@ -150,6 +151,7 @@ function toAppModelOption(
   if (model.badge) option.badge = model.badge;
   if (model.isDefault) option.isDefault = true;
   if (model.isLegacy) option.isLegacy = true;
+  if (model.gateway) option.gateway = model.gateway;
   return option;
 }
 

@@ -79,6 +79,7 @@ type ModelPickerItem = {
   acpRegistryIconUrl?: string | undefined;
   continuationGroupKey?: string | undefined;
   isLegacy?: boolean | undefined;
+  gateway?: "litellm" | undefined;
   isUnavailable?: boolean | undefined;
 };
 
@@ -567,6 +568,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           ...(model.subProvider ? { subProvider: model.subProvider } : {}),
           ...(model.badge ? { badge: model.badge } : {}),
           ...(model.isLegacy ? { isLegacy: true } : {}),
+          ...(model.gateway ? { gateway: model.gateway } : {}),
           ...(model.isUnavailable ? { isUnavailable: true } : {}),
           instanceId,
           driverKind: entry.driverKind,
@@ -1056,6 +1058,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     favoriteStarOnHover={selectedInstanceId === "favorites" && !isSearching}
                     showInstanceBadge={badgedInstanceIds.has(model.instanceId)}
                     showNewBadge={model.badge === "new"}
+                    showGatewayBadge={model.gateway === "litellm"}
                     unavailable={model.isUnavailable === true}
                     jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
                     disabledReason={disabledReason}

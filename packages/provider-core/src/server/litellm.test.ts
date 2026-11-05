@@ -35,6 +35,7 @@ import {
   liteLLMSignedOutMessage,
   parseLiteLLMModelIds,
   type LiteLLMHarness,
+  type LiteLLMStatus,
   withLiteLLMLauncher,
 } from "./litellm.ts";
 import type {
@@ -92,18 +93,42 @@ describe("applyLiteLLMStatus", () => {
       (id) => id.replace(/^bedrock\//, ""),
     );
     assert.deepEqual(
-      result.models.map((model) => [model.slug, model.name, model.isCustom]),
+      result.models.map((model) => [model.slug, model.name, model.isCustom, model.gateway]),
       [
-        ["gpt-5", "gpt-5", false],
-        ["claude-sonnet-4-5", "Claude Sonnet 4.5", false],
-        ["bedrock/sonnet-4.5", "bedrock/sonnet-4.5", false],
-        ["claude sonnet 4.5", "claude sonnet 4.5", false],
-        ["my-alias", "My alias", true],
+        ["gpt-5", "gpt-5", false, "litellm"],
+        ["claude-sonnet-4-5", "Claude Sonnet 4.5", false, "litellm"],
+        ["bedrock/sonnet-4.5", "bedrock/sonnet-4.5", false, "litellm"],
+        ["claude sonnet 4.5", "claude sonnet 4.5", false, "litellm"],
+        ["my-alias", "My alias", true, undefined],
       ],
     );
     assert.strictEqual(result.models[0]?.capabilities, capabilities);
     assert.strictEqual(result.models[2]?.capabilities, sonnetCapabilities);
     assert.strictEqual(result.models[3]?.capabilities, sonnetCapabilities);
+  });
+
+  it("marks only the harness-listed models the gateway serves", () => {
+    const listed = (slug: string) => ({ slug, name: slug, isCustom: false, capabilities: null });
+    const harnessSnapshot = snapshot({
+      models: [listed("litellm/gpt-5"), listed("openai/gpt-5"), listed("litellm/retired")],
+    });
+    const gatewayId = (slug: string) =>
+      slug.startsWith("litellm/") ? slug.slice("litellm/".length) : undefined;
+    const marks = (status: LiteLLMStatus) =>
+      applyLiteLLMStatus(harnessSnapshot, status, undefined, undefined, gatewayId).models.map(
+        (model) => [model.slug, model.gateway],
+      );
+    assert.deepEqual(marks({ auth: { status: "authenticated" }, models: ["gpt-5"] }), [
+      ["litellm/gpt-5", "litellm"],
+      ["openai/gpt-5", undefined],
+      ["litellm/retired", undefined],
+    ]);
+    // Without the gateway's list, no model can claim to be served by it.
+    assert.deepEqual(marks({ auth: { status: "unauthenticated", message: "Signed out." } }), [
+      ["litellm/gpt-5", undefined],
+      ["openai/gpt-5", undefined],
+      ["litellm/retired", undefined],
+    ]);
   });
 
   it("reports the gateway sign-in instead of the harness's own account", () => {

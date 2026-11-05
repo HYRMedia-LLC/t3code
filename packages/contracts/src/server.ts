@@ -83,6 +83,8 @@ export const ServerProviderModel = Schema.Struct({
   isCustom: Schema.Boolean,
   isDefault: Schema.optional(Schema.Boolean),
   isLegacy: Schema.optional(Schema.Boolean),
+  /** Set when a LiteLLM gateway serves the model, as opposed to the harness's own catalog. */
+  gateway: Schema.optional(Schema.Literal("litellm")),
   capabilities: Schema.NullOr(ModelCapabilities),
 });
 export type ServerProviderModel = typeof ServerProviderModel.Type;

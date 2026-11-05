@@ -222,6 +222,21 @@ const mergeGatewayModels = (
   return [...gateway, ...current.filter((model) => model.isCustom && !listed.has(model.slug))];
 };
 
+const markGatewayModels = (
+  models: ReadonlyArray<ServerProviderModel>,
+  gatewayIds: ReadonlyArray<string> | undefined,
+  listedModelGatewayId: (slug: string) => string | undefined,
+): ReadonlyArray<ServerProviderModel> => {
+  if (gatewayIds === undefined) return models;
+  const served = new Set(gatewayIds);
+  return models.map((model) => {
+    const gatewayId = listedModelGatewayId(model.slug);
+    return gatewayId !== undefined && served.has(gatewayId)
+      ? { ...model, gateway: "litellm" as const }
+      : model;
+  });
+};
+
 /**
  * `gatewayModelCapabilities` is `undefined` for harnesses that list the models
  * `lite` syncs into them; otherwise the gateway's list replaces the catalog.
@@ -231,23 +246,23 @@ export const applyLiteLLMStatus = (
   status: LiteLLMStatus,
   gatewayModelCapabilities: ModelCapabilities | null | undefined,
   gatewayModelSlug: (gatewayId: string) => string = (gatewayId) => gatewayId,
+  listedModelGatewayId: (slug: string) => string | undefined = (slug) => slug,
 ): ServerProvider => {
   const authenticated = status.auth.status === "authenticated";
   const ownsCatalog = gatewayModelCapabilities !== undefined;
+  const models = ownsCatalog
+    ? mergeGatewayModels(
+        snapshot.models,
+        status.models ?? [],
+        gatewayModelCapabilities,
+        gatewayModelSlug,
+      )
+    : snapshot.models;
   const base: ServerProvider = {
     ...snapshot,
     setup: { ...snapshot.setup, canAuthenticate: true, canInstall: false },
     auth: { status: authenticated ? "authenticated" : "unauthenticated", label: "LiteLLM SSO" },
-    ...(ownsCatalog
-      ? {
-          models: mergeGatewayModels(
-            snapshot.models,
-            status.models ?? [],
-            gatewayModelCapabilities,
-            gatewayModelSlug,
-          ),
-        }
-      : {}),
+    models: markGatewayModels(models, status.models, listedModelGatewayId),
   };
   if (status.auth.status !== "authenticated" || !snapshot.enabled)
     return status.auth.status === "authenticated" || !snapshot.enabled
@@ -319,6 +334,8 @@ export interface LiteLLMLauncherSpec<Config> {
   readonly gatewayModelCapabilities?: ModelCapabilities | null;
   /** Maps a gateway model ID to a catalog slug or alias so it keeps catalog capabilities. */
   readonly gatewayModelSlug?: (gatewayId: string) => string;
+  /** The gateway model ID behind a listed slug, if any; absent means the slug is the ID. */
+  readonly listedModelGatewayId?: (slug: string) => string | undefined;
   /** Aliases the harness resolves to a listed model; exact slugs always count. */
   readonly servesModel?: (model: ServerProviderModel, requested: string) => boolean;
 }
@@ -652,7 +669,13 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
     const instance = yield* driver.create({ ...input, config, launchGeneration });
     yield* Deferred.succeed(innerSnapshot, instance.snapshot);
     const snapshot = wrapSnapshot(instance.snapshot, status, freshStatus, (current, liteStatus) =>
-      applyLiteLLMStatus(current, liteStatus, spec.gatewayModelCapabilities, spec.gatewayModelSlug),
+      applyLiteLLMStatus(
+        current,
+        liteStatus,
+        spec.gatewayModelCapabilities,
+        spec.gatewayModelSlug,
+        spec.listedModelGatewayId,
+      ),
     );
     const auth = yield* makeLiteLLMAuth({
       instanceId: input.instanceId,
