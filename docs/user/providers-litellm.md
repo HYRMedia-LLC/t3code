@@ -1,6 +1,6 @@
 # LiteLLM
 
-T3 Code can run Claude, Codex, OpenCode, and Pi through a [LiteLLM](https://docs.litellm.ai)
+T3 Code can run Claude, Codex, and OpenCode through a [LiteLLM](https://docs.litellm.ai)
 gateway with the LiteLLM CLI (`lite`). Each harness keeps working as usual, but it signs in
 with your gateway's SSO and uses the gateway's models. This lets you, for example, use a
 GPT model on the Claude harness.
@@ -17,7 +17,7 @@ GPT model on the Claude harness.
 2. Set `LITELLM_PROXY_URL` to your gateway URL in your shell profile, for example
    `export LITELLM_PROXY_URL=https://litellm.example.com`. The desktop app reads it from your
    login shell. You can also set it in a provider instance's **Environment variables**.
-3. In **Settings > Providers**, choose **Add provider**, pick Claude, Codex, OpenCode, or Pi,
+3. In **Settings > Providers**, choose **Add provider**, pick Claude, Codex, or OpenCode,
    and turn on **Launch through LiteLLM**. The suggested label is, for example,
    **LiteLLM Claude**, and that is the name the model picker shows. To route an existing
    provider instead, such as the built-in Codex or Claude, open it and turn on
@@ -42,8 +42,8 @@ full URL and paste it in T3 Code when it asks.
 ## Models
 
 - **LiteLLM Claude** lists every model the gateway offers.
-- **LiteLLM Codex**, **LiteLLM OpenCode**, and **LiteLLM Pi** list the models that `lite`
-  syncs into those harnesses.
+- **LiteLLM Codex** and **LiteLLM OpenCode** list the models that `lite` syncs into those
+  harnesses.
 
 T3 Code checks the gateway's model list at most once a minute, and **Refresh** in
 **Settings > Providers** checks it now. If the gateway removes the model a thread uses, the
@@ -71,13 +71,11 @@ commit messages, and other text generation do not carry tags.
 - Threads that a thread starts, such as delegated tasks, forks, and threads an agent creates,
   copy its tags. A scheduled task keeps the tags you set on it.
 
-LiteLLM Pi does not send request tags yet.
-
 ## Limits
 
-- LiteLLM Codex and LiteLLM Pi use their own config directory, so they do not read your
-  usual Codex or Pi config, skills, or extensions. A Codex provider you switch to LiteLLM
-  might not resume threads it started before the switch.
+- LiteLLM Codex uses its own config directory, so it does not read your usual Codex config or
+  skills. A Codex provider you switch to LiteLLM might not resume threads it started before
+  the switch.
 - When the selected text generation model is not on the gateway, commit messages, titles,
   and branch names use the first gateway model.
 - LiteLLM Codex does not accept `-c` or `--config` in **Launch arguments**, because Codex

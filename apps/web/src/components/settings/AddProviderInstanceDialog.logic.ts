@@ -27,7 +27,6 @@ export const LITELLM_LAUNCHER_DRIVERS: ReadonlySet<string> = new Set([
   "claudeAgent",
   "codex",
   "opencode",
-  "pi",
 ]);
 
 /** The suggested label follows the launcher until the user types their own. */

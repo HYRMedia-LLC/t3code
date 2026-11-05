@@ -1,5 +1,5 @@
 /**
- * Runs an existing harness (Claude, Codex, Pi, OpenCode) through the LiteLLM CLI
+ * Runs an existing harness (Claude, Codex, OpenCode) through the LiteLLM CLI
  * (`lite <harness>`), which signs in with SSO, routes the harness at the gateway
  * and syncs the gateway's models into the harness. T3 keeps no LiteLLM secrets:
  * `lite` owns the key, its refresh, and the gateway URL (`LITELLM_PROXY_URL`).
@@ -45,9 +45,8 @@ import * as ProviderHost from "./ProviderHost.ts";
 import type { ManagedServerProvider } from "./snapshot.ts";
 import { spawnAndCollect } from "./snapshotProbe.ts";
 
-export type LiteLLMHarness = "claude" | "codex" | "pi" | "opencode";
+export type LiteLLMHarness = "claude" | "codex" | "opencode";
 
-/** `lite pi` first shipped in 1.102.0; `--pkce` login in 1.99.0. */
 const MINIMUM_LITELLM_CLI_VERSION = "1.102.0";
 const INSTALL_HINT = "Install the LiteLLM CLI with `uv tool install 'litellm[cli]'`.";
 const STATUS_TTL_MS = 60_000;
@@ -129,8 +128,6 @@ const requestTagShimLines = (harness: LiteLLMHarness): ReadonlyArray<string> => 
       return [
         `if ${TAGS_SET} && [ -z "\${OPENCODE_CONFIG-}" ]; then export OPENCODE_CONFIG="$(dirname "$0")/${OPENCODE_TAGS_CONFIG}"; fi`,
       ];
-    case "pi":
-      return [];
   }
 };
 
@@ -318,8 +315,6 @@ export interface LiteLLMLauncherSpec<Config> {
       readonly environment: NodeJS.ProcessEnv;
     },
   ) => Effect.Effect<Config, string>;
-  /** Environment that places the harness home; user values win. */
-  readonly homeEnvironment?: (homeDir: string) => Record<string, string>;
   /** Set when T3 owns the model catalog (Claude); other harnesses list what `lite` syncs. */
   readonly gatewayModelCapabilities?: ModelCapabilities | null;
   /** Maps a gateway model ID to a catalog slug or alias so it keeps catalog capabilities. */
@@ -527,14 +522,7 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
         );
     }).pipe(Effect.mapError((cause) => fail("Could not write the LiteLLM launcher.", cause)));
 
-    const userEnvironment = new Set(input.environment.map((variable) => variable.name));
-    const environment = [
-      ...input.environment,
-      ...Object.entries(spec.homeEnvironment?.(homeDir) ?? {})
-        .filter(([name]) => !userEnvironment.has(name))
-        .map(([name, value]) => ({ name, value, sensitive: false })),
-    ];
-    const processEnv = yield* mergeProviderInstanceEnvironment(environment);
+    const processEnv = yield* mergeProviderInstanceEnvironment(input.environment);
     const config = yield* spec
       .configure(input.config, { binaryPath, homeDir, environment: processEnv })
       .pipe(Effect.mapError((detail) => fail(detail)));
@@ -661,7 +649,7 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
           };
     });
 
-    const instance = yield* driver.create({ ...input, config, environment, launchGeneration });
+    const instance = yield* driver.create({ ...input, config, launchGeneration });
     yield* Deferred.succeed(innerSnapshot, instance.snapshot);
     const snapshot = wrapSnapshot(instance.snapshot, status, freshStatus, (current, liteStatus) =>
       applyLiteLLMStatus(current, liteStatus, spec.gatewayModelCapabilities, spec.gatewayModelSlug),
@@ -687,16 +675,12 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
       orchestrationAdapter: {
         ...adapter,
         launchGeneration,
-        ...(spec.harness === "pi"
-          ? {}
-          : {
-              launchTags: (policy) =>
-                withRequestTags(policy).pipe(
-                  Effect.map(
-                    ({ launchEnvironment }) => launchEnvironment?.[LITELLM_REQUEST_TAGS_ENV] ?? "",
-                  ),
-                ),
-            }),
+        launchTags: (policy) =>
+          withRequestTags(policy).pipe(
+            Effect.map(
+              ({ launchEnvironment }) => launchEnvironment?.[LITELLM_REQUEST_TAGS_ENV] ?? "",
+            ),
+          ),
         // New threads get their own session, so a new thread never inherits an old
         // key or model list. Threads already on a shared session keep sharing it.
         getCapabilities: () => adapter.getCapabilities().pipe(Effect.map(perThreadSessions)),

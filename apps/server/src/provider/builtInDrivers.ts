@@ -21,7 +21,7 @@ import {
   type LiteLLMLauncherEnv,
 } from "@t3tools/provider-core/server/litellm";
 
-import { LITELLM_CLAUDE, LITELLM_CODEX, LITELLM_OPENCODE, LITELLM_PI } from "./liteLLMLaunchers.ts";
+import { LITELLM_CLAUDE, LITELLM_CODEX, LITELLM_OPENCODE } from "./liteLLMLaunchers.ts";
 
 export type BuiltInDriversEnv =
   | AcpRegistryDriverEnv
@@ -46,7 +46,7 @@ export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv
   withLiteLLMLauncher(OpenCodeDriver, LITELLM_OPENCODE),
   AntigravityDriver,
   KiroDriver,
-  withLiteLLMLauncher(PiDriver, LITELLM_PI),
+  PiDriver,
   MuseDriver,
   AcpRegistryDriver,
 ];

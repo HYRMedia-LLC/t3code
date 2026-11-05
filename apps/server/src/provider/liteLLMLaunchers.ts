@@ -1,7 +1,6 @@
 import type { ClaudeSettings, CodexSettings } from "@t3tools/contracts";
 import type { LiteLLMLauncherSpec } from "@t3tools/provider-core/server/litellm";
 import type { OpenCodeSettings } from "@t3tools/provider-opencode/settings";
-import type { PiSettings } from "@t3tools/provider-pi/settings";
 import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
 import { codexModelFamily } from "@t3tools/shared/model";
 import * as Effect from "effect/Effect";
@@ -47,10 +46,4 @@ export const LITELLM_OPENCODE: LiteLLMLauncherSpec<OpenCodeSettings> = {
     config.serverUrl
       ? Effect.fail("Clear Server URL: LiteLLM can only route an OpenCode server T3 starts.")
       : Effect.succeed({ ...config, binaryPath: launch.binaryPath }),
-};
-
-export const LITELLM_PI: LiteLLMLauncherSpec<PiSettings> = {
-  harness: "pi",
-  configure: (config, launch) => Effect.succeed({ ...config, binaryPath: launch.binaryPath }),
-  homeEnvironment: (homeDir) => ({ PI_CODING_AGENT_DIR: homeDir }),
 };

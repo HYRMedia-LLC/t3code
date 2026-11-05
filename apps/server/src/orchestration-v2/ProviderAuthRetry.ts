@@ -17,7 +17,7 @@ import * as ThreadManagementService from "./ThreadManagementService.ts";
 const RETRY_MESSAGE_PREFIX = "message:auth-retry:";
 
 const AUTH_REJECTION_CODES = new Set(["api_error_401", "api_error_403"]);
-// Codex, OpenCode and Pi only pass the gateway's text through. LiteLLM answers an
+// Codex and OpenCode only pass the gateway's text through. LiteLLM answers an
 // expired or revoked key with "Authentication Error, ..." and HTTP 401.
 // A bare 401 or "unauthorized" is too common in tool output to count.
 const AUTH_REJECTION_TEXT =
