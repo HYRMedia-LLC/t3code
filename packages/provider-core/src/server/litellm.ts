@@ -492,6 +492,9 @@ const withGatewayModels = (
         }),
       );
   return {
+    generateTranscriptionPostProcessing: onGatewayModel(
+      textGeneration.generateTranscriptionPostProcessing,
+    ),
     generateCommitMessage: onGatewayModel(textGeneration.generateCommitMessage),
     generatePrContent: onGatewayModel(textGeneration.generatePrContent),
     generateBranchName: onGatewayModel(textGeneration.generateBranchName),

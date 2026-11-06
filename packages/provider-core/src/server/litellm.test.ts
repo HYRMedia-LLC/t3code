@@ -327,6 +327,7 @@ const makeInnerDriver = (created: Array<ProviderDriverCreateInput<FakeConfig>>) 
           },
           orchestrationAdapter: fakeAdapter,
           textGeneration: {
+            generateTranscriptionPostProcessing: () => Effect.die("unused"),
             generateCommitMessage: () => Effect.die("unused"),
             generatePrContent: () => Effect.die("unused"),
             generateBranchName: () => Effect.die("unused"),

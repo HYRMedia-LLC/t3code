@@ -403,6 +403,8 @@ export interface ComposerDraft {
   readonly modelSelection?: ModelSelection;
   readonly runtimeMode?: RuntimeMode;
   readonly interactionMode?: ProviderInteractionMode;
+  /** `/clear` armed this draft: its next message starts a fresh provider session. */
+  readonly freshContext?: boolean;
   readonly workspaceSelection?: ComposerDraftWorkspaceSelection;
   /** LiteLLM request tags for a new task; absent when none are set. */
   readonly requestTags?: ReadonlyArray<string>;
@@ -441,6 +443,7 @@ export type ComposerDraftSettingsUpdate = Pick<
   | "modelSelection"
   | "runtimeMode"
   | "interactionMode"
+  | "freshContext"
   | "workspaceSelection"
   | "requestTags"
   | "project"
@@ -475,6 +478,7 @@ const ComposerDraftSchema = Schema.Struct({
   modelSelection: Schema.optional(ModelSelectionSchema),
   runtimeMode: Schema.optional(RuntimeModeSchema),
   interactionMode: Schema.optional(ProviderInteractionModeSchema),
+  freshContext: Schema.optional(Schema.Boolean),
   workspaceSelection: Schema.optional(ComposerDraftWorkspaceSelectionSchema),
   requestTags: Schema.optional(Schema.Array(Schema.String)),
   project: Schema.optional(ComposerDraftProjectSchema),
@@ -655,6 +659,7 @@ function isEmptyDraft(draft: ComposerDraft): boolean {
     draft.modelSelection === undefined &&
     draft.runtimeMode === undefined &&
     draft.interactionMode === undefined &&
+    draft.freshContext !== true &&
     draft.workspaceSelection === undefined &&
     draft.requestTags === undefined
   );
@@ -1541,6 +1546,15 @@ export function updateComposerDraftSettings(
   });
 }
 
+export function setFreshSessionPending(draftKey: string, pending: boolean): void {
+  if ((getComposerDraftSnapshot(draftKey).freshContext === true) === pending) return;
+  updateComposerDraftSettings(draftKey, { freshContext: pending ? true : undefined });
+}
+
+export function isFreshSessionPending(draftKey: string): boolean {
+  return getComposerDraftSnapshot(draftKey).freshContext === true;
+}
+
 export function subscribeComposerDraftModelReconciliation(input: {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly threadRefsAtom: Atom.Atom<ReadonlyArray<ScopedThreadRef>>;
@@ -1786,6 +1800,7 @@ export function sameComposerDraftState(a: ComposerDraft, b: ComposerDraft): bool
     a.modelSelection === b.modelSelection &&
     a.runtimeMode === b.runtimeMode &&
     a.interactionMode === b.interactionMode &&
+    a.freshContext === b.freshContext &&
     a.workspaceSelection === b.workspaceSelection
   );
 }
@@ -1811,7 +1826,12 @@ export function undoComposerDraftMergeState(
       .map((attachment) => attachment.id),
   );
   const undoSetting = <
-    K extends "modelSelection" | "runtimeMode" | "interactionMode" | "workspaceSelection",
+    K extends
+      | "modelSelection"
+      | "runtimeMode"
+      | "interactionMode"
+      | "freshContext"
+      | "workspaceSelection",
   >(
     key: K,
   ): ComposerDraft[K] => (existing[key] === merged[key] ? snapshot[key] : existing[key]);
@@ -1831,6 +1851,7 @@ export function undoComposerDraftMergeState(
     modelSelection: undoSetting("modelSelection"),
     runtimeMode: undoSetting("runtimeMode"),
     interactionMode: undoSetting("interactionMode"),
+    freshContext: undoSetting("freshContext"),
     workspaceSelection: undoSetting("workspaceSelection"),
   };
   return withComposerDraft(current, draftKey, draft);
@@ -2063,7 +2084,7 @@ export const composerDraftUploadSourcesAtom = Atom.make((get): ComposerDraftUplo
 
 type ComposerDraftSettings = Pick<
   ComposerDraft,
-  "modelSelection" | "runtimeMode" | "interactionMode"
+  "modelSelection" | "runtimeMode" | "interactionMode" | "freshContext"
 >;
 const EMPTY_DRAFT_SETTINGS: ComposerDraftSettings = {};
 const composerDraftSettingsAtom = Atom.family((draftKey: string) =>
@@ -2073,13 +2094,15 @@ const composerDraftSettingsAtom = Atom.family((draftKey: string) =>
       modelSelection: draft.modelSelection,
       runtimeMode: draft.runtimeMode,
       interactionMode: draft.interactionMode,
+      freshContext: draft.freshContext,
     };
   }).pipe(
     Atom.withEquality(
       (a: ComposerDraftSettings, b: ComposerDraftSettings) =>
         a.modelSelection === b.modelSelection &&
         a.runtimeMode === b.runtimeMode &&
-        a.interactionMode === b.interactionMode,
+        a.interactionMode === b.interactionMode &&
+        a.freshContext === b.freshContext,
     ),
   ),
 );
