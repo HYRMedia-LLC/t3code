@@ -12,6 +12,7 @@ import {
   ProviderInstanceId,
   ProviderSessionId,
   ProviderTurnId,
+  RunAttemptId,
   ProviderThreadId,
   ThreadId,
   NodeId,
@@ -309,6 +310,7 @@ const farExpiry = Math.floor(Date.UTC(2099, 0, 1) / 1_000);
 const makeInnerDriver = (
   created: Array<ProviderDriverCreateInput<FakeConfig>>,
   events = Stream.empty as Stream.Stream<import("./ProviderAdapter.ts").ProviderAdapterV2Event>,
+  runtimeOverrides: Partial<ProviderAdapterV2SessionRuntime> = {},
 ) =>
   ({
     driverKind: ProviderDriverKind.make("claudeAgent"),
@@ -341,6 +343,7 @@ const makeInnerDriver = (
               fakeAdapter.openSession(session).pipe(
                 Effect.map((runtime) => ({
                   ...runtime,
+                  ...runtimeOverrides,
                   events,
                   subscribeEvents: Effect.succeed({ events, close: Effect.void }),
                 })),
@@ -370,16 +373,26 @@ const createLiteLLMInstance = (
     readonly harness?: LiteLLMHarness;
     readonly events?: Stream.Stream<import("./ProviderAdapter.ts").ProviderAdapterV2Event>;
     readonly httpClient?: HttpClient.HttpClient;
+    readonly runtimeOverrides?: Partial<ProviderAdapterV2SessionRuntime>;
   } = {},
 ) => {
   const settings = options.settings ?? DEFAULT_SERVER_SETTINGS;
-  const driver = withLiteLLMLauncher(makeInnerDriver(created, options.events), {
-    harness: options.harness ?? "claude",
-    configure: (config, launch) =>
-      Effect.succeed({ ...config, binaryPath: launch.binaryPath, homePath: launch.homeDir }),
-    gatewayModelCapabilities: capabilities,
-    servesModel: (model, requested) => model.slug === `my-${requested}`,
-  });
+  const driver = withLiteLLMLauncher(
+    makeInnerDriver(created, options.events, options.runtimeOverrides),
+    {
+      harness: options.harness ?? "claude",
+      configure: (config, launch) =>
+        Effect.succeed({ ...config, binaryPath: launch.binaryPath, homePath: launch.homeDir }),
+      gatewayModelCapabilities: capabilities,
+      ...(options.harness === "opencode"
+        ? {
+            listedModelGatewayId: (slug: string) =>
+              slug.startsWith("litellm/") ? slug.slice("litellm/".length) : undefined,
+          }
+        : {}),
+      servesModel: (model, requested) => model.slug === `my-${requested}`,
+    },
+  );
   return driver
     .launchers!.litellm!.create({
       instanceId,
@@ -458,53 +471,87 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
           },
         },
       };
-      const instance = yield* createLiteLLMInstance(fixture, [], {
-        events: Stream.make(event),
-        httpClient: HttpClient.make((request) =>
-          Effect.succeed(
-            HttpClientResponse.fromWeb(
-              request,
-              Response.json(
-                request.url.endsWith("/key/info")
-                  ? { info: { spend: 2, max_budget: 10 } }
-                  : {
-                      data: [
-                        {
-                          model_name: "gpt-5",
-                          model_info: { input_cost_per_token: 0.001, output_cost_per_token: 0.002 },
-                        },
-                      ],
-                    },
+      for (const harness of ["claude", "codex", "opencode"] as const) {
+        const reportedModel = harness === "opencode" ? "litellm/gpt-5" : "gpt-5";
+        const usageEvent = {
+          ...event,
+          providerTurn: {
+            ...event.providerTurn,
+            runAttemptId: RunAttemptId.make("attempt-1"),
+            turnTokenUsage: { ...event.providerTurn.turnTokenUsage!, models: [reportedModel] },
+          },
+        };
+        const instance = yield* createLiteLLMInstance(fixture, [], {
+          harness,
+          runtimeOverrides: {
+            hasPendingBackgroundWork: Effect.succeed(true),
+            startTurn: () => Effect.void,
+          },
+          events: Stream.make(usageEvent),
+          httpClient: HttpClient.make((request) =>
+            Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json(
+                  request.url.endsWith("/key/info")
+                    ? { info: { spend: 2, max_budget: 10 } }
+                    : {
+                        data: [
+                          {
+                            model_name: "gpt-5",
+                            model_info: {
+                              input_cost_per_token: 0.001,
+                              output_cost_per_token: 0.002,
+                            },
+                          },
+                        ],
+                      },
+                ),
               ),
             ),
           ),
-        ),
-      });
-      const snapshot = yield* instance.snapshot.getSnapshot;
-      assert.equal(snapshot.usageLimits?.windows[0]?.usedPercent, 20);
-      const runtime = yield* instance.orchestrationAdapter.openSession({
-        threadId: ThreadId.make("app-thread"),
-        providerSessionId: ProviderSessionId.make("session"),
-        modelSelection: { instanceId, model: "gpt-5" },
-        runtimePolicy: {
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          cwd: fixture.dir,
-          requestTags: ["jira:ABC-1"],
-        },
-      });
-      const subscription = yield* runtime.subscribeEvents!;
-      for (const stream of [runtime.events, subscription.events]) {
-        const events = yield* Stream.runCollect(stream);
-        const priced = events[0];
-        assert.equal(priced?.type, "provider_turn.updated");
-        if (priced?.type === "provider_turn.updated") {
-          assert.closeTo(priced.providerTurn.turnTokenUsage?.proxyCostUsd ?? -1, 0.14, 1e-10);
-          assert.include(priced.providerTurn.turnTokenUsage?.proxyRequestTags ?? [], "jira:ABC-1");
-          assert.include(
-            priced.providerTurn.turnTokenUsage?.proxyRequestTags ?? [],
-            "tool:T3-Code/claude",
-          );
+        });
+        const snapshot = yield* instance.snapshot.getSnapshot;
+        assert.equal(snapshot.usageLimits?.windows[0]?.usedPercent, 20);
+        const runtime = yield* instance.orchestrationAdapter.openSession({
+          threadId: ThreadId.make("app-thread"),
+          providerSessionId: ProviderSessionId.make("session"),
+          modelSelection: { instanceId, model: "gpt-5" },
+          runtimePolicy: {
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            cwd: fixture.dir,
+            requestTags: ["jira:ABC-1"],
+          },
+        });
+        assert.isTrue(yield* runtime.hasPendingBackgroundWork!);
+        yield* runtime.startTurn({
+          attemptId: RunAttemptId.make("attempt-1"),
+          modelSelection: { instanceId, model: "gpt-5" },
+          runtimePolicy: {
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            cwd: fixture.dir,
+            requestTags: ["jira:CHANGED"],
+          },
+        } as unknown as ProviderAdapterV2TurnInput);
+        const subscription = yield* runtime.subscribeEvents!;
+        for (const stream of [runtime.events, subscription.events]) {
+          const events = yield* Stream.runCollect(stream);
+          const priced = events[0];
+          assert.equal(priced?.type, "provider_turn.updated");
+          if (priced?.type === "provider_turn.updated") {
+            assert.closeTo(priced.providerTurn.turnTokenUsage?.proxyCostUsd ?? -1, 0.14, 1e-10);
+            assert.include(
+              priced.providerTurn.turnTokenUsage?.proxyRequestTags ?? [],
+              harness === "claude" ? "jira:CHANGED" : "jira:ABC-1",
+            );
+            assert.deepEqual(priced.providerTurn.turnTokenUsage?.models, [reportedModel]);
+            assert.include(
+              priced.providerTurn.turnTokenUsage?.proxyRequestTags ?? [],
+              "tool:T3-Code/claude",
+            );
+          }
         }
       }
     }).pipe(Effect.scoped, Effect.provide(testServices)),

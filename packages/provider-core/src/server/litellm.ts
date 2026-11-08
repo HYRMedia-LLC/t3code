@@ -758,9 +758,12 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
               Effect.map((runtimePolicy) => {
                 tagsByAttempt.set(
                   turn.attemptId,
-                  parseLiteLLMRequestTags(
-                    runtimePolicy.launchEnvironment?.[LITELLM_REQUEST_TAGS_ENV] ?? "",
-                  ),
+                  // Codex and OpenCode keep the process environment until the session restarts.
+                  spec.harness === "claude"
+                    ? parseLiteLLMRequestTags(
+                        runtimePolicy.launchEnvironment?.[LITELLM_REQUEST_TAGS_ENV] ?? "",
+                      )
+                    : initialTags,
                 );
                 return { ...turn, runtimePolicy };
               }),
@@ -772,7 +775,17 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
             return Ref.get(cached).pipe(
               Effect.map((latest) => {
                 const rates = latest?.status.usage?.rates;
-                const proxyCostUsd = rates ? priceLiteLLMTurn(usage, rates) : undefined;
+                const reportedModel = usage.models?.length === 1 ? usage.models[0] : undefined;
+                const gatewayModel =
+                  reportedModel === undefined
+                    ? undefined
+                    : spec.listedModelGatewayId
+                      ? spec.listedModelGatewayId(reportedModel)
+                      : reportedModel;
+                const proxyCostUsd =
+                  rates && gatewayModel !== undefined
+                    ? priceLiteLLMTurn({ ...usage, models: [gatewayModel] }, rates)
+                    : undefined;
                 return {
                   ...event,
                   providerTurn: {
