@@ -125,6 +125,9 @@ function withoutProviders(
             buckets: environment.summary.buckets.filter(
               (bucket) => !hiddenProviders.has(bucket.provider),
             ),
+            tagCosts: environment.summary.tagCosts?.filter(
+              (row) => !hiddenProviders.has(row.provider),
+            ),
             sources: environment.summary.sources.filter(
               (source) => !hiddenProviders.has(source.fingerprint.provider),
             ),

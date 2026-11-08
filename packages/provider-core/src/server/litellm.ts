@@ -21,6 +21,7 @@ import { parseGitRemoteRepository } from "@t3tools/shared/git";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
 import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -36,6 +37,8 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import type { ProviderDriver, ProviderDriverCreateInput, ProviderInstance } from "./driver.ts";
+import { priceLiteLLMTurn, readLiteLLMUsage, type LiteLLMUsage } from "./litellmUsage.ts";
+import { makeUnavailableUsageLimits } from "./usageLimits.ts";
 import type { ProviderTextGeneration } from "./textGeneration.ts";
 import { ProviderDriverError } from "./errors.ts";
 import { mergeProviderInstanceEnvironment } from "./instanceEnvironment.ts";
@@ -68,6 +71,7 @@ export type LiteLLMAuthState =
   | { readonly status: "unauthenticated" | "unavailable"; readonly message: string };
 
 export interface LiteLLMStatus {
+  readonly usage?: LiteLLMUsage;
   readonly auth: LiteLLMAuthState;
   /** Gateway model ids; absent while signed out or when the gateway could not list them. */
   readonly models?: ReadonlyArray<string> | undefined;
@@ -260,6 +264,13 @@ export const applyLiteLLMStatus = (
     : snapshot.models;
   const base: ServerProvider = {
     ...snapshot,
+    usageLimits:
+      status.usage?.limits ??
+      makeUnavailableUsageLimits({
+        checkedAt: snapshot.checkedAt,
+        reason: "probeFailed",
+        message: "LiteLLM budget is unavailable.",
+      }),
     setup: { ...snapshot.setup, canAuthenticate: true, canInstall: false },
     auth: { status: authenticated ? "authenticated" : "unauthenticated", label: "LiteLLM SSO" },
     models: markGatewayModels(models, status.models, listedModelGatewayId),
@@ -286,7 +297,11 @@ const runLite = Effect.fn("LiteLLM.runLite")(function* (
 
 const checkStatus = Effect.fn("LiteLLM.checkStatus")(function* (
   environment: NodeJS.ProcessEnv,
-): Effect.fn.Return<LiteLLMStatus, never, ChildProcessSpawner.ChildProcessSpawner> {
+): Effect.fn.Return<
+  LiteLLMStatus,
+  never,
+  ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
+> {
   const hasGatewayUrl = Boolean(environment.LITELLM_PROXY_URL?.trim());
   const version = yield* runLite(["version"], environment).pipe(Effect.option);
   if (Option.isNone(version))
@@ -299,7 +314,7 @@ const checkStatus = Effect.fn("LiteLLM.checkStatus")(function* (
         message: `LiteLLM CLI ${cliVersion} is too old. Update it to ${MINIMUM_LITELLM_CLI_VERSION} or later.`,
       },
     };
-  // Exit code only: stdout is the live key and is never kept or logged.
+  // The key stays on the server and is used only for this gateway probe.
   const token = yield* runLite(["auth", "print-token"], environment).pipe(Effect.option);
   if (Option.isNone(token) || token.value.code !== 0)
     return {
@@ -315,7 +330,14 @@ const checkStatus = Effect.fn("LiteLLM.checkStatus")(function* (
     Effect.map((result) => (result.code === 0 ? parseLiteLLMModelIds(result.stdout) : undefined)),
     Effect.orElseSucceed(() => undefined),
   );
-  return { auth: { status: "authenticated" }, models };
+  const usage = hasGatewayUrl
+    ? yield* readLiteLLMUsage(
+        environment.LITELLM_PROXY_URL!.trim(),
+        token.value.stdout.trim(),
+        DateTime.formatIso(yield* DateTime.now),
+      )
+    : undefined;
+  return { auth: { status: "authenticated" }, models, ...(usage ? { usage } : {}) };
 });
 
 export interface LiteLLMLauncherSpec<Config> {
@@ -517,6 +539,7 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
     const path = yield* Path.Path;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const host = yield* ProviderHost.ProviderHost;
+    const httpClient = yield* HttpClient.HttpClient;
     const fail = (detail: string, cause?: unknown) =>
       new ProviderDriverError({
         driver: driver.driverKind,
@@ -555,6 +578,7 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
     const freshStatus = Effect.gen(function* () {
       const checkedAt = yield* Clock.currentTimeMillis;
       const next = yield* checkStatus(processEnv).pipe(
+        Effect.provideService(HttpClient.HttpClient, httpClient),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       );
       const previous = yield* Ref.getAndSet(cached, { status: next, checkedAt });
@@ -720,17 +744,66 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
                 detail: `${current.auth.message} Sign in again in Settings > Providers.`,
               }),
             });
+          const launchPolicy = yield* withRequestTags(session.runtimePolicy);
+          const initialTags = parseLiteLLMRequestTags(
+            launchPolicy.launchEnvironment?.[LITELLM_REQUEST_TAGS_ENV] ?? "",
+          );
+          const tagsByAttempt = new Map<string, ReadonlyArray<string>>();
           const runtime = yield* adapter.openSession({
             ...session,
-            runtimePolicy: yield* withRequestTags(session.runtimePolicy),
+            runtimePolicy: launchPolicy,
           });
           const tagged = (turn: ProviderAdapter.ProviderAdapterV2TurnInput) =>
             withRequestTags(turn.runtimePolicy).pipe(
-              Effect.map((runtimePolicy) => ({ ...turn, runtimePolicy })),
+              Effect.map((runtimePolicy) => {
+                tagsByAttempt.set(
+                  turn.attemptId,
+                  parseLiteLLMRequestTags(
+                    runtimePolicy.launchEnvironment?.[LITELLM_REQUEST_TAGS_ENV] ?? "",
+                  ),
+                );
+                return { ...turn, runtimePolicy };
+              }),
             );
+          const priceEvent = (event: ProviderAdapter.ProviderAdapterV2Event) => {
+            if (event.type !== "provider_turn.updated" || !event.providerTurn.turnTokenUsage)
+              return Effect.succeed(event);
+            const usage = event.providerTurn.turnTokenUsage;
+            return Ref.get(cached).pipe(
+              Effect.map((latest) => {
+                const rates = latest?.status.usage?.rates;
+                const proxyCostUsd = rates ? priceLiteLLMTurn(usage, rates) : undefined;
+                return {
+                  ...event,
+                  providerTurn: {
+                    ...event.providerTurn,
+                    turnTokenUsage: {
+                      ...usage,
+                      proxyRequestTags:
+                        (event.providerTurn.runAttemptId === null
+                          ? undefined
+                          : tagsByAttempt.get(event.providerTurn.runAttemptId)) ?? initialTags,
+                      ...(proxyCostUsd === undefined ? {} : { proxyCostUsd }),
+                    },
+                  },
+                };
+              }),
+            );
+          };
           const compactThread = runtime.compactThread;
           return {
             ...runtime,
+            events: runtime.events.pipe(Stream.mapEffect(priceEvent)),
+            ...(runtime.subscribeEvents
+              ? {
+                  subscribeEvents: runtime.subscribeEvents.pipe(
+                    Effect.map((subscription) => ({
+                      ...subscription,
+                      events: subscription.events.pipe(Stream.mapEffect(priceEvent)),
+                    })),
+                  ),
+                }
+              : {}),
             ...(compactThread === undefined
               ? {}
               : { compactThread: (turn) => tagged(turn).pipe(Effect.flatMap(compactThread)) }),

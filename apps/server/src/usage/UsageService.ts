@@ -24,6 +24,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
+import { readTagCosts } from "./usageTagCosts.ts";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
@@ -148,6 +150,7 @@ export class UsageService extends Context.Service<
 >()("t3/usage/UsageService") {}
 
 export const make = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
@@ -872,6 +875,9 @@ export const make = Effect.gen(function* () {
     const pruned = pruneScanCache(fileCache, retentionCutoffMs);
     if (pruned > 0) cacheDirty = true;
 
+    const tagCosts = yield* readTagCosts(input).pipe(
+      Effect.provideService(SqlClient.SqlClient, sql),
+    );
     const aggregated = aggregator.finish();
     const readAt = yield* DateTime.now;
     const finishedAtMs = yield* Clock.currentTimeMillis;
@@ -883,6 +889,7 @@ export const make = Effect.gen(function* () {
       sinceDay: input.sinceDay,
       untilDay: input.untilDay,
       buckets: aggregated.buckets,
+      tagCosts,
       sources,
       pricing: pricing(),
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),

@@ -56,6 +56,10 @@ export type ThreadTokenUsageSnapshot = typeof ThreadTokenUsageSnapshot.Type;
 // Input includes cache reads/writes; output includes the optional reasoningTokens subset.
 const TurnTokenUsageCommonFields = {
   usageScope: Schema.Literal("main_agent"),
+  proxyRequestTags: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
+  proxyCostUsd: Schema.optional(
+    Schema.Number.check(Schema.isFinite(), Schema.isGreaterThanOrEqualTo(0)),
+  ),
   cachedInputTokens: Schema.optional(NonNegativeInt),
   cacheCreationTokens: Schema.optional(NonNegativeInt),
   reasoningTokens: Schema.optional(NonNegativeInt),

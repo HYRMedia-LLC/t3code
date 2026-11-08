@@ -11,6 +11,10 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionId,
+  ProviderTurnId,
+  ProviderThreadId,
+  ThreadId,
+  NodeId,
   type OrchestrationV2ProviderCapabilities,
   type ServerSettings,
   type ProviderAuthState,
@@ -19,10 +23,12 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import * as Effect from "effect/Effect";
+import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as HttpClient from "effect/http/HttpClient";
 import * as ChildProcess from "effect/process/ChildProcess";
 
@@ -278,6 +284,7 @@ const fakeAdapter = {
     ).pipe(
       Effect.as({
         providerSessionId: input.providerSessionId,
+        events: Stream.empty,
         providerSession: { capabilities: sharedCapabilities },
         startTurn: (turn: ProviderAdapterV2TurnInput) =>
           Effect.sync(() => void startedTurns.push(turn.modelSelection.model)),
@@ -299,7 +306,10 @@ const writeKeyExpiry = (fixture: ReturnType<typeof makeFixture>, expiresAt: numb
 };
 const farExpiry = Math.floor(Date.UTC(2099, 0, 1) / 1_000);
 
-const makeInnerDriver = (created: Array<ProviderDriverCreateInput<FakeConfig>>) =>
+const makeInnerDriver = (
+  created: Array<ProviderDriverCreateInput<FakeConfig>>,
+  events = Stream.empty as Stream.Stream<import("./ProviderAdapter.ts").ProviderAdapterV2Event>,
+) =>
   ({
     driverKind: ProviderDriverKind.make("claudeAgent"),
     metadata: { displayName: "Fake" },
@@ -325,7 +335,17 @@ const makeInnerDriver = (created: Array<ProviderDriverCreateInput<FakeConfig>>) 
             streamChanges: Stream.empty,
             applyUsageLimits: () => Effect.void,
           },
-          orchestrationAdapter: fakeAdapter,
+          orchestrationAdapter: {
+            ...fakeAdapter,
+            openSession: (session) =>
+              fakeAdapter.openSession(session).pipe(
+                Effect.map((runtime) => ({
+                  ...runtime,
+                  events,
+                  subscribeEvents: Effect.succeed({ events, close: Effect.void }),
+                })),
+              ),
+          },
           textGeneration: {
             generateTranscriptionPostProcessing: () => Effect.die("unused"),
             generateCommitMessage: () => Effect.die("unused"),
@@ -345,10 +365,15 @@ const makeInnerDriver = (created: Array<ProviderDriverCreateInput<FakeConfig>>) 
 const createLiteLLMInstance = (
   fixture: ReturnType<typeof makeFixture>,
   created: Array<ProviderDriverCreateInput<FakeConfig>>,
-  options: { readonly settings?: ServerSettings; readonly harness?: LiteLLMHarness } = {},
+  options: {
+    readonly settings?: ServerSettings;
+    readonly harness?: LiteLLMHarness;
+    readonly events?: Stream.Stream<import("./ProviderAdapter.ts").ProviderAdapterV2Event>;
+    readonly httpClient?: HttpClient.HttpClient;
+  } = {},
 ) => {
   const settings = options.settings ?? DEFAULT_SERVER_SETTINGS;
-  const driver = withLiteLLMLauncher(makeInnerDriver(created), {
+  const driver = withLiteLLMLauncher(makeInnerDriver(created, options.events), {
     harness: options.harness ?? "claude",
     configure: (config, launch) =>
       Effect.succeed({ ...config, binaryPath: launch.binaryPath, homePath: launch.homeDir }),
@@ -395,12 +420,96 @@ const createLiteLLMInstance = (
       ),
       Effect.provideService(
         HttpClient.HttpClient,
-        HttpClient.make(() => Effect.die("no callback is forwarded in these tests")),
+        options.httpClient ??
+          HttpClient.make((request) =>
+            Effect.succeed(
+              HttpClientResponse.fromWeb(request, new Response(null, { status: 503 })),
+            ),
+          ),
       ),
     );
 };
 
 describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
+  it.live("publishes gateway budgets and prices both adapter event subscription paths", () =>
+    Effect.gen(function* () {
+      using fixture = makeFixture();
+      signIn(fixture);
+      const event: import("./ProviderAdapter.ts").ProviderAdapterV2Event = {
+        type: "provider_turn.updated",
+        driver: ProviderDriverKind.make("claudeAgent"),
+        providerTurn: {
+          id: ProviderTurnId.make("turn"),
+          providerThreadId: ProviderThreadId.make("thread"),
+          nodeId: NodeId.make("node"),
+          runAttemptId: null,
+          nativeTurnRef: null,
+          ordinal: 1,
+          status: "completed",
+          startedAt: null,
+          completedAt: DateTime.makeUnsafe("2026-11-07T00:00:00Z"),
+          turnTokenUsage: {
+            usageScope: "main_agent",
+            usageStatus: "complete",
+            hasSubagents: false,
+            models: ["gpt-5"],
+            inputTokens: 100,
+            outputTokens: 20,
+          },
+        },
+      };
+      const instance = yield* createLiteLLMInstance(fixture, [], {
+        events: Stream.make(event),
+        httpClient: HttpClient.make((request) =>
+          Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              Response.json(
+                request.url.endsWith("/key/info")
+                  ? { info: { spend: 2, max_budget: 10 } }
+                  : {
+                      data: [
+                        {
+                          model_name: "gpt-5",
+                          model_info: { input_cost_per_token: 0.001, output_cost_per_token: 0.002 },
+                        },
+                      ],
+                    },
+              ),
+            ),
+          ),
+        ),
+      });
+      const snapshot = yield* instance.snapshot.getSnapshot;
+      assert.equal(snapshot.usageLimits?.windows[0]?.usedPercent, 20);
+      const runtime = yield* instance.orchestrationAdapter.openSession({
+        threadId: ThreadId.make("app-thread"),
+        providerSessionId: ProviderSessionId.make("session"),
+        modelSelection: { instanceId, model: "gpt-5" },
+        runtimePolicy: {
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: fixture.dir,
+          requestTags: ["jira:ABC-1"],
+        },
+      });
+      const subscription = yield* runtime.subscribeEvents!;
+      for (const stream of [runtime.events, subscription.events]) {
+        const events = yield* Stream.runCollect(stream);
+        const priced = events[0];
+        assert.equal(priced?.type, "provider_turn.updated");
+        if (priced?.type === "provider_turn.updated") {
+          assert.closeTo(priced.providerTurn.turnTokenUsage?.proxyCostUsd ?? -1, 0.14, 1e-10);
+          assert.include(priced.providerTurn.turnTokenUsage?.proxyRequestTags ?? [], "jira:ABC-1");
+          assert.include(
+            priced.providerTurn.turnTokenUsage?.proxyRequestTags ?? [],
+            "tool:T3-Code/claude",
+          );
+        }
+      }
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
+  );
+
   it.live("launches the harness through a per-instance lite shim", () =>
     Effect.gen(function* () {
       using fixture = makeFixture();

@@ -78,6 +78,27 @@ function environment(id: string, usageSummary: UsageSummary): EnvironmentUsage {
 }
 
 describe("mergeUsage", () => {
+  it("merges tag estimates by provider across environments without adding them to API totals", () => {
+    const row = {
+      tag: "project:billing",
+      provider: "claude" as const,
+      costUsd: 2,
+      pricedTurns: 3,
+      unpricedTurns: 1,
+    };
+    const first = summary([], []);
+    const merged = mergeUsage(
+      [
+        environment("a", { ...first, tagCosts: [row] }),
+        environment("b", { ...first, tagCosts: [row] }),
+        environment("old", first),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+    expect(merged.tagCosts).toEqual([{ ...row, costUsd: 4, pricedTurns: 6, unpricedTurns: 2 }]);
+    expect(merged.costUsd).toBe(0);
+  });
+
   it("counts a Cursor account once across servers while retaining each server's other providers", () => {
     const account = {
       provider: "cursor" as const,

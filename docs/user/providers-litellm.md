@@ -56,6 +56,35 @@ model picker marks it unavailable and the next message fails until you select an
 The gateway translates between model families, so effort and thinking controls might not
 apply to every model.
 
+## Cost and Budget
+
+On web and desktop, enable **Usage limits** in **Settings > Appearance > Thread details**
+to see **Proxy cost (est.)** after a turn with known gateway rates. The estimate covers the main agent in the loaded turns. It excludes
+subagents and background work. A `+` means some loaded turns have no price. Earlier turns
+can be included when you load more history. Each priced turn keeps its estimate when rates
+change. This is an estimate, not billed spend.
+
+T3 Code reads rates from your gateway's `/model/info` and the current key budget from
+`/key/info`, with the key from your existing `lite` sign-in. The budget appears in thread
+details, **Usage > Limits**, and `/usage-limits`. It includes other clients that use the same
+key. Refresh the provider to check it now; automatic checks use the one-minute provider cache.
+A failed budget check does not block agent turns. Keys without a budget have no budget bar.
+
+This applies to LiteLLM Claude, Codex, and OpenCode. Models with missing rates or ambiguous
+prices have no estimate. The Usage cost history still uses its existing prices. T3 Code does
+not import proxy billing history or user and team budgets.
+
+### Cost by Tag
+
+Open **Usage > Cost > Cost by request tag** to compare local estimates by tag and provider.
+Use the tag filter for a ticket, project, environment, tool, or custom tag. The selected
+period, environments, and providers apply to this view.
+
+T3 Code records the tags sent with each turn. A later tag change does not move earlier
+costs. Tracking starts with new turns after this feature is installed. Untagged turns and
+activity from other clients are not included. Each row shows priced and unpriced turn counts.
+A turn can have several tags, so do not add the rows to get total spend.
+
 ## Request Tags
 
 T3 Code sends [request tags](https://docs.litellm.ai/docs/proxy/request_tags) with LiteLLM

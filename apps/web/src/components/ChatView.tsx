@@ -1,3 +1,4 @@
+import { threadProxyCost } from "@t3tools/client-runtime/state/context-window";
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -525,6 +526,7 @@ export default function ChatView(props: ChatViewProps) {
   const activeProviderThread = serverProjection?.providerThreads.find(
     (thread) => thread.id === serverProjection.thread.activeProviderThreadId,
   );
+  const activeThreadProxyCost = threadProxyCost(serverProjection?.providerTurns ?? []);
   const activeThreadLiveTokenUsage = latestProviderTurnTokenUsage(
     serverProjection?.providerTurns ?? [],
     serverProjection,
@@ -3957,6 +3959,7 @@ export default function ChatView(props: ChatViewProps) {
                     providers: providerStatuses,
                     sources: serverConfig?.usageLimitSources ?? EMPTY_USAGE_LIMIT_SOURCES,
                     contextWindow: activeContextWindow,
+                    proxyCost: activeThreadProxyCost,
                   }}
                 />
 

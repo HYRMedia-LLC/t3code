@@ -137,7 +137,17 @@ export const UsageSummaryInput = Schema.Struct({
 });
 export type UsageSummaryInput = typeof UsageSummaryInput.Type;
 
+export const UsageTagCost = Schema.Struct({
+  tag: TrimmedNonEmptyString,
+  provider: UsageProviderKind,
+  costUsd: Schema.Number.check(Schema.isFinite(), Schema.isGreaterThanOrEqualTo(0)),
+  pricedTurns: NonNegativeInt,
+  unpricedTurns: NonNegativeInt,
+});
+export type UsageTagCost = typeof UsageTagCost.Type;
+
 export const UsageSummary = Schema.Struct({
+  tagCosts: Schema.optional(ForwardCompatibleArray(UsageTagCost)),
   contractVersion: Schema.Number,
   readAt: Schema.String,
   timeZone: TrimmedNonEmptyString,
