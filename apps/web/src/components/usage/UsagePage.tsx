@@ -78,6 +78,7 @@ import {
 } from "../WorkspaceBreadcrumb";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { UsageLimitsSection } from "./UsageLimits";
+import { UsageTagCosts } from "./UsageTagCosts";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import { UsageProviderChart } from "./UsageProviderChart";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
@@ -780,6 +781,8 @@ function UsageOverview({
           />
         </div>
       </section>
+
+      {metric === "cost" ? <UsageTagCosts rows={merged.tagCosts ?? []} /> : null}
 
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-medium text-foreground">Totals</h2>

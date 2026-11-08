@@ -7,6 +7,7 @@ import {
   type UsageSourceFingerprint,
   type UsageSummary,
   type UsageTokenTotals,
+  type UsageTagCost,
 } from "@t3tools/contracts";
 
 export interface EnvironmentUsage {
@@ -87,6 +88,7 @@ export interface UsageContractMismatch {
 }
 
 export interface MergedUsage {
+  readonly tagCosts?: readonly UsageTagCost[];
   readonly costUsd: number;
   readonly uncachedInputTokens: number;
   readonly cachedInputTokens: number;
@@ -324,6 +326,24 @@ export function mergeUsage(
     }
   }
 
+  const tagTotals = new Map<string, UsageTagCost>();
+  for (const { summary } of current) {
+    for (const row of summary.tagCosts ?? []) {
+      const key = JSON.stringify([row.provider, row.tag]);
+      const previous = tagTotals.get(key);
+      tagTotals.set(
+        key,
+        previous
+          ? {
+              ...row,
+              costUsd: previous.costUsd + row.costUsd,
+              pricedTurns: previous.pricedTurns + row.pricedTurns,
+              unpricedTurns: previous.unpricedTurns + row.unpricedTurns,
+            }
+          : row,
+      );
+    }
+  }
   const {
     ownerByFingerprint,
     supplementalBucketsByEnvironment,
@@ -585,5 +605,8 @@ export function mergeUsage(
     duplicateSources: duplicates,
     contributingEnvironments,
     contractMismatches,
+    tagCosts: [...tagTotals.values()].sort(
+      (a, b) => b.costUsd - a.costUsd || a.tag.localeCompare(b.tag),
+    ),
   };
 }

@@ -317,3 +317,22 @@ export function shouldCompactBeforeSend(input: {
     })
   );
 }
+
+export function threadProxyCost(
+  turns: ReadonlyArray<Pick<OrchestrationV2ProviderTurn, "turnTokenUsage" | "status">>,
+) {
+  let amount = 0;
+  let pricedTurns = 0;
+  let unpricedTurns = 0;
+  for (const turn of turns) {
+    if (turn.status === "pending" || turn.status === "running" || turn.turnTokenUsage?.localCommand)
+      continue;
+    const cost = turn.turnTokenUsage?.proxyCostUsd;
+    if (cost === undefined) unpricedTurns++;
+    else {
+      amount += cost;
+      pricedTurns++;
+    }
+  }
+  return pricedTurns === 0 ? null : { amount, pricedTurns, unpricedTurns };
+}

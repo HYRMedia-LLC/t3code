@@ -16,6 +16,7 @@ import type { ReactNode } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { useNowMinute } from "../../hooks/useNowMinute";
+import type { threadProxyCost } from "@t3tools/client-runtime/state/context-window";
 import type { ContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
 import { formatContextWindowTokens } from "../../lib/contextWindow";
 import { cn } from "../../lib/utils";
@@ -35,6 +36,7 @@ export interface ThreadDetailsUsageInput {
   readonly providers: readonly ServerProvider[];
   readonly sources: UsageLimitSourceSnapshots;
   readonly contextWindow: ContextWindowSnapshot | null;
+  readonly proxyCost?: ReturnType<typeof threadProxyCost>;
 }
 
 type UsageTone = "error" | "warning" | null;
@@ -44,6 +46,7 @@ export function ThreadDetailsUsage({
   providerInstanceId,
   providers,
   sources,
+  proxyCost,
 }: Omit<ThreadDetailsUsageInput, "contextWindow">) {
   const nowMinute = useNowMinute();
   const now = Date.parse(`${nowMinute}:00Z`);
@@ -56,8 +59,8 @@ export function ThreadDetailsUsage({
   const limits =
     report?.accounts.find((entry) => entry.instanceId === providerInstanceId)?.limits ??
     providers.find((provider) => provider.instanceId === providerInstanceId)?.usageLimits;
-  if (!limits) return null;
-  const notice = limitsNotice(limits);
+  if (!limits && !proxyCost) return null;
+  const notice = limits ? limitsNotice(limits) : null;
 
   return (
     <ThreadDetailsSection
@@ -75,8 +78,32 @@ export function ThreadDetailsUsage({
             tooltip={<span className="text-foreground">{notice}</span>}
           />
         ) : (
-          limits.windows.map((window) => <LimitRow key={window.id} window={window} now={now} />)
+          limits?.windows.map((window) => <LimitRow key={window.id} window={window} now={now} />)
         )}
+        {proxyCost ? (
+          <UsageRow
+            label="Proxy cost (est.)"
+            fill={null}
+            tone={null}
+            value={`$${proxyCost.amount.toFixed(4)}${proxyCost.unpricedTurns > 0 ? "+" : ""}`}
+            tooltip={
+              <>
+                <span className="text-foreground">
+                  Estimated main-agent cost for {proxyCost.pricedTurns} priced turns shown.
+                </span>
+                <span className="text-muted-foreground">
+                  Uses gateway rates at the time of each turn. Excludes subagents, background work,
+                  and turns without known rates. This is not billed spend.
+                </span>
+                {proxyCost.unpricedTurns > 0 ? (
+                  <span className="text-muted-foreground">
+                    {proxyCost.unpricedTurns} turns shown have no proxy price.
+                  </span>
+                ) : null}
+              </>
+            }
+          />
+        ) : null}
       </div>
     </ThreadDetailsSection>
   );

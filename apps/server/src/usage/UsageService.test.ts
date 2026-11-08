@@ -211,6 +211,11 @@ const layerService = (input: {
     ),
   );
 
+const makeWithServices = (services: ReturnType<typeof layerService>) =>
+  Layer.build(services).pipe(
+    Effect.flatMap((context) => UsageService.make.pipe(Effect.provideContext(context))),
+  );
+
 const BEFORE_NARROW_WINDOW = Date.parse("2026-08-01T10:00:00Z") / 1000;
 const NARROW_WINDOW: UsageSummaryInput = {
   timeZone: "UTC",
@@ -1737,8 +1742,8 @@ describe("UsageService", () => {
             db.close();
           }
         });
-        const service = yield* UsageService.make.pipe(
-          Effect.provide(layerService({ prefix: "usage-service-opencode", home, settings })),
+        const service = yield* makeWithServices(
+          layerService({ prefix: "usage-service-opencode", home, settings }),
         );
         const summary = yield* service.readSummary(WINDOW);
         assert.strictEqual(summary.buckets[0]?.provider, "opencode");
@@ -1786,34 +1791,32 @@ describe("UsageService", () => {
         }
         await NodeFSP.symlink(instanceRoot, alias, "junction");
       });
-      const service = yield* UsageService.make.pipe(
-        Effect.provide(
-          layerService({
-            prefix: "usage-service-opencode-instances",
-            home,
-            environment: { XDG_DATA_HOME: dataHome },
-            settings: {
-              ...settings,
-              providerInstances: {
-                ...settings.providerInstances,
-                [ProviderInstanceId.make("opencode-work")]: {
-                  driver: ProviderDriverKind.make("opencode"),
-                  environment: [
-                    {
-                      name: "OPENCODE_DATA_DIR",
-                      value: ` ${instanceRoot}, ${alias} `,
-                      sensitive: false,
-                    },
-                  ],
-                },
-                [ProviderInstanceId.make("opencode-xdg")]: {
-                  driver: ProviderDriverKind.make("opencode"),
-                  environment: [{ name: "OPENCODE_DATA_DIR", value: "", sensitive: false }],
-                },
+      const service = yield* makeWithServices(
+        layerService({
+          prefix: "usage-service-opencode-instances",
+          home,
+          environment: { XDG_DATA_HOME: dataHome },
+          settings: {
+            ...settings,
+            providerInstances: {
+              ...settings.providerInstances,
+              [ProviderInstanceId.make("opencode-work")]: {
+                driver: ProviderDriverKind.make("opencode"),
+                environment: [
+                  {
+                    name: "OPENCODE_DATA_DIR",
+                    value: ` ${instanceRoot}, ${alias} `,
+                    sensitive: false,
+                  },
+                ],
+              },
+              [ProviderInstanceId.make("opencode-xdg")]: {
+                driver: ProviderDriverKind.make("opencode"),
+                environment: [{ name: "OPENCODE_DATA_DIR", value: "", sensitive: false }],
               },
             },
-          }),
-        ),
+          },
+        }),
       );
       const summary = yield* service.readSummary(WINDOW);
       const sources = summary.sources.filter(
@@ -1861,18 +1864,16 @@ describe("UsageService", () => {
           "junction",
         );
       });
-      const service = yield* UsageService.make.pipe(
-        Effect.provide(
-          layerService({
-            prefix: "usage-service-aliased-roots-test",
-            home,
-            settings,
-            environment: {
-              OPENCODE_DATA_DIR: `${opencode},${opencodeAlias}`,
-              ANTIGRAVITY_DATA_DIR: `${antigravityA},${antigravityB}`,
-            },
-          }),
-        ),
+      const service = yield* makeWithServices(
+        layerService({
+          prefix: "usage-service-aliased-roots-test",
+          home,
+          settings,
+          environment: {
+            OPENCODE_DATA_DIR: `${opencode},${opencodeAlias}`,
+            ANTIGRAVITY_DATA_DIR: `${antigravityA},${antigravityB}`,
+          },
+        }),
       );
       const summary = yield* service.readSummary(WINDOW);
       const sourcesFor = (provider: "opencode" | "antigravity") =>
@@ -1926,20 +1927,18 @@ describe("UsageService", () => {
         driver: ProviderDriverKind.make("antigravity"),
         environment: [{ name: "ANTIGRAVITY_DATA_DIR", value: dataDir, sensitive: false }],
       });
-      const service = yield* UsageService.make.pipe(
-        Effect.provide(
-          layerService({
-            prefix: "usage-service-antigravity-instances-test",
-            home,
-            settings: {
-              providerInstances: {
-                ...settings.providerInstances,
-                [ProviderInstanceId.make("antigravity-first")]: instance(first),
-                [ProviderInstanceId.make("antigravity-second")]: instance(` ${second}, `),
-              },
+      const service = yield* makeWithServices(
+        layerService({
+          prefix: "usage-service-antigravity-instances-test",
+          home,
+          settings: {
+            providerInstances: {
+              ...settings.providerInstances,
+              [ProviderInstanceId.make("antigravity-first")]: instance(first),
+              [ProviderInstanceId.make("antigravity-second")]: instance(` ${second}, `),
             },
-          }),
-        ),
+          },
+        }),
       );
       const summary = yield* service.readSummary(WINDOW);
       const roots = summary.sources
@@ -2011,44 +2010,42 @@ describe("UsageService", () => {
           }) + "\n",
         );
       });
-      const service = yield* UsageService.make.pipe(
-        Effect.provide(
-          layerService({
-            prefix: "usage-service-accounts-test",
-            home,
-            settings: {
-              ...settings,
-              providerInstances: {
-                ...settings.providerInstances,
-                [ProviderInstanceId.make("claude-work")]: {
-                  driver: ProviderDriverKind.make("claudeAgent"),
-                  enabled: false,
-                  environment: [{ name: "CLAUDE_CONFIG_DIR", value: claudeHome, sensitive: false }],
-                },
-                [ProviderInstanceId.make("codex-work")]: {
-                  driver: ProviderDriverKind.make("codex"),
-                  environment: [{ name: "CODEX_HOME", value: codexHome, sensitive: false }],
-                },
-                [ProviderInstanceId.make("codex-alias")]: {
-                  driver: ProviderDriverKind.make("codex"),
-                  config: { homePath: alias },
-                },
-                [ProviderInstanceId.make("codex-shadow")]: {
-                  driver: ProviderDriverKind.make("codex"),
-                  config: { homePath: codexHome, shadowHomePath: NodePath.join(home, "shadow") },
-                  environment: [
-                    { name: "CODEX_HOME", value: NodePath.join(home, "ignored"), sensitive: false },
-                  ],
-                },
-                [ProviderInstanceId.make("grok-work")]: {
-                  driver: ProviderDriverKind.make("grok"),
-                  config: { customModels: "not-a-list" },
-                  environment: [{ name: "GROK_HOME", value: grokHome, sensitive: false }],
-                },
+      const service = yield* makeWithServices(
+        layerService({
+          prefix: "usage-service-accounts-test",
+          home,
+          settings: {
+            ...settings,
+            providerInstances: {
+              ...settings.providerInstances,
+              [ProviderInstanceId.make("claude-work")]: {
+                driver: ProviderDriverKind.make("claudeAgent"),
+                enabled: false,
+                environment: [{ name: "CLAUDE_CONFIG_DIR", value: claudeHome, sensitive: false }],
+              },
+              [ProviderInstanceId.make("codex-work")]: {
+                driver: ProviderDriverKind.make("codex"),
+                environment: [{ name: "CODEX_HOME", value: codexHome, sensitive: false }],
+              },
+              [ProviderInstanceId.make("codex-alias")]: {
+                driver: ProviderDriverKind.make("codex"),
+                config: { homePath: alias },
+              },
+              [ProviderInstanceId.make("codex-shadow")]: {
+                driver: ProviderDriverKind.make("codex"),
+                config: { homePath: codexHome, shadowHomePath: NodePath.join(home, "shadow") },
+                environment: [
+                  { name: "CODEX_HOME", value: NodePath.join(home, "ignored"), sensitive: false },
+                ],
+              },
+              [ProviderInstanceId.make("grok-work")]: {
+                driver: ProviderDriverKind.make("grok"),
+                config: { customModels: "not-a-list" },
+                environment: [{ name: "GROK_HOME", value: grokHome, sensitive: false }],
               },
             },
-          }),
-        ),
+          },
+        }),
       );
       const summary = yield* service.readSummary(WINDOW);
       assert.strictEqual(totalOutputTokens(summary), 59);
@@ -2168,30 +2165,28 @@ describe("UsageService", () => {
       Effect.gen(function* () {
         const { transcript, settings, home } = yield* setup;
         yield* Effect.promise(() => NodeFSP.writeFile(transcript, claudeLine(1, 5)));
-        const service = yield* UsageService.make.pipe(
-          Effect.provide(
-            layerService({
-              prefix: "usage-service-inherited-homes-test",
-              home,
-              environment: {
-                CODEX_HOME: NodePath.join(home, "inherited-codex"),
-                CLAUDE_CONFIG_DIR: NodePath.join(home, "claude"),
-              },
-              settings: {
-                ...settings,
-                providerInstances: {
-                  [ProviderInstanceId.make("codex")]: {
-                    driver: ProviderDriverKind.make("codex"),
-                    config: {},
-                  },
-                  [ProviderInstanceId.make("claudeAgent")]: {
-                    driver: ProviderDriverKind.make("claudeAgent"),
-                    config: {},
-                  },
+        const service = yield* makeWithServices(
+          layerService({
+            prefix: "usage-service-inherited-homes-test",
+            home,
+            environment: {
+              CODEX_HOME: NodePath.join(home, "inherited-codex"),
+              CLAUDE_CONFIG_DIR: NodePath.join(home, "claude"),
+            },
+            settings: {
+              ...settings,
+              providerInstances: {
+                [ProviderInstanceId.make("codex")]: {
+                  driver: ProviderDriverKind.make("codex"),
+                  config: {},
+                },
+                [ProviderInstanceId.make("claudeAgent")]: {
+                  driver: ProviderDriverKind.make("claudeAgent"),
+                  config: {},
                 },
               },
-            }),
-          ),
+            },
+          }),
         );
         const summary = yield* service.readSummary(WINDOW);
         assert.strictEqual(totalOutputTokens(summary), 5);
@@ -3012,8 +3007,8 @@ describe("UsageService", () => {
         const lastWrite = Date.parse("2026-08-01T10:00:00Z") / 1000;
         await NodeFSP.utimes(transcript, lastWrite, lastWrite);
       });
-      const service = yield* UsageService.make.pipe(
-        Effect.provide(layerService({ prefix: "usage-service-saved-window-test", home, settings })),
+      const service = yield* makeWithServices(
+        layerService({ prefix: "usage-service-saved-window-test", home, settings }),
       );
       const first = yield* service.readSummary(WINDOW);
       yield* Effect.promise(() =>
@@ -3132,7 +3127,7 @@ describe("UsageService", () => {
             );
           },
         });
-        const service = yield* UsageService.make.pipe(Effect.provide(serviceLayer));
+        const service = yield* makeWithServices(serviceLayer);
 
         const summary = yield* service.readSummary(WINDOW);
         assert.strictEqual(summary.pricing.status, "fresh");
@@ -3147,7 +3142,7 @@ describe("UsageService", () => {
         );
         assert.strictEqual(requests[1]?.headers.accept, "application/vnd.github.raw+json");
 
-        const restarted = yield* UsageService.make.pipe(Effect.provide(serviceLayer));
+        const restarted = yield* makeWithServices(serviceLayer);
         const cached = yield* restarted.readSummary(WINDOW);
         assert.strictEqual(cached.pricing.status, "cached");
         assert.deepStrictEqual(cached.buckets, summary.buckets);
@@ -3158,8 +3153,8 @@ describe("UsageService", () => {
   it.live("does not orphan an in-flight scan when its first caller is interrupted", () =>
     Effect.gen(function* () {
       const { settings, home } = yield* setup;
-      const service = yield* UsageService.make.pipe(
-        Effect.provide(layerService({ prefix: "usage-service-interruption-test", home, settings })),
+      const service = yield* makeWithServices(
+        layerService({ prefix: "usage-service-interruption-test", home, settings }),
       );
 
       let orphanedAt: number | undefined;

@@ -14,7 +14,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
-import { shouldCompactBeforeSend } from "./contextWindow.ts";
+import { threadProxyCost, shouldCompactBeforeSend } from "./contextWindow.ts";
 import type { ThreadStructure } from "./models.ts";
 import { v2Projection } from "./orchestrationV2TestFixtures.ts";
 
@@ -260,5 +260,33 @@ describe("shouldCompactBeforeSend", () => {
     expect(shouldCompactBeforeSend(sendInput(overrides as Parameters<typeof sendInput>[0]))).toBe(
       expected,
     );
+  });
+});
+
+describe("threadProxyCost", () => {
+  it("sums only priced finished turns and marks missing prices", () => {
+    const usage = {
+      usageScope: "main_agent" as const,
+      usageStatus: "complete" as const,
+      hasSubagents: false,
+      inputTokens: 1,
+      outputTokens: 1,
+    };
+    const priced = {
+      status: "completed" as const,
+      turnTokenUsage: { ...usage, proxyCostUsd: 0.25 },
+    };
+    expect(threadProxyCost([])).toBeNull();
+    expect(threadProxyCost([{ status: "completed" }])).toBeNull();
+    expect(
+      threadProxyCost([
+        priced,
+        priced,
+        { status: "failed" },
+        { status: "running", turnTokenUsage: { ...usage, proxyCostUsd: 10 } },
+        { status: "completed", turnTokenUsage: { ...usage, localCommand: true } },
+        { status: "completed", turnTokenUsage: { ...usage, proxyCostUsd: 0 } },
+      ]),
+    ).toEqual({ amount: 0.5, pricedTurns: 3, unpricedTurns: 1 });
   });
 });
