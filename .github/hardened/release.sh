@@ -13,7 +13,8 @@
 # - sets bundle ID com.hyrmedia.t3code.litellm, Electron profile t3code-hardened,
 #   and data home ~/.t3-hyr, so the app never shares state with T3 Code or Nightly
 # - turns off telemetry, T3 Connect (relay, tunnels), guest share links,
-#   LAN and Tailscale access, and the model manifest fetch from upstream
+#   and the model manifest fetch from upstream. LAN and Tailscale access stay
+#   available and are off until the user turns them on in Settings.
 # Installed copies check github.com/$REPO releases for updates.
 set -euo pipefail
 
@@ -131,7 +132,7 @@ SHORT="$(git rev-parse --short "$COMMIT")"
 cat >"$OUT/notes.md" <<EOF
 Daily macOS arm64 release of the HYRMedia Hardened build, based on [$SHORT](https://github.com/$REPO/commit/$COMMIT), synced with upstream [pingdotgg/t3code](https://github.com/pingdotgg/t3code).
 
-The Hardened configuration is unchanged: telemetry, T3 Connect, relay tunnels, and guest links are disabled. The server listens on \`127.0.0.1\` only. The app uses the bundled model list and stores data in \`~/.t3-hyr\`.
+Telemetry, T3 Connect, relay tunnels, and guest links are disabled. Remote access is available only over LAN or Tailscale, and is off until you turn it on in Settings. The app uses the bundled model list and stores data in \`~/.t3-hyr\`.
 
 The app is signed and notarized by HYRMedia, LLC. Install the arm64 ZIP, or use the app update feature. \`hardened.patch\` contains the build changes. \`SHA256SUMS\` covers the release assets.
 ${LAST_TAG:+

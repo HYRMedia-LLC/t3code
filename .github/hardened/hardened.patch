@@ -48,38 +48,6 @@ index 99a082b43..41c5c8674 100644
      const destinationPath = path.join(input.appDataDirectory, names.current);
      const legacyPath = path.join(input.appDataDirectory, names.legacy);
      const inspect = (resourcePath: string) =>
-diff --git a/apps/desktop/src/backend/DesktopServerExposure.ts b/apps/desktop/src/backend/DesktopServerExposure.ts
-index 8d178c605..1041c822e 100644
---- a/apps/desktop/src/backend/DesktopServerExposure.ts
-+++ b/apps/desktop/src/backend/DesktopServerExposure.ts
-@@ -114,9 +114,9 @@ const resolveDesktopServerExposure = (input: {
-   const localHttpUrl = `http://${DESKTOP_LOOPBACK_HOST}:${input.port}`;
-   const localWsUrl = `ws://${DESKTOP_LOOPBACK_HOST}:${input.port}`;
- 
--  if (input.mode === "local-only") {
-+  if (input.mode === "local-only" || input.mode === "network-accessible") {
-     return {
--      mode: input.mode,
-+      mode: "local-only",
-       bindHost: DESKTOP_LOOPBACK_HOST,
-       localHttpUrl,
-       localWsUrl,
-diff --git a/apps/desktop/src/settings/DesktopAppSettings.ts b/apps/desktop/src/settings/DesktopAppSettings.ts
-index 433e8127a..09dcc4e3c 100644
---- a/apps/desktop/src/settings/DesktopAppSettings.ts
-+++ b/apps/desktop/src/settings/DesktopAppSettings.ts
-@@ -219,9 +219,8 @@ function normalizeDesktopSettingsDocument(
-     linuxPasswordStore: normalizeLinuxPasswordStorePreference(parsed.linuxPasswordStore),
-     mainWindowBounds,
-     mainWindowMaximized: mainWindowBounds !== null && parsed.mainWindowMaximized === true,
--    serverExposureMode:
--      parsed.serverExposureMode === "network-accessible" ? "network-accessible" : "local-only",
--    tailscaleServeEnabled: parsed.tailscaleServeEnabled === true,
-+    serverExposureMode: "local-only",
-+    tailscaleServeEnabled: false,
-     tailscaleServePort: normalizeTailscaleServePort(parsed.tailscaleServePort),
-     updateChannel: updateChannelConfiguredByUser
-       ? Option.getOrElse(parsedUpdateChannel, () => defaultSettings.updateChannel)
 diff --git a/apps/server/src/cloud/CloudLink.ts b/apps/server/src/cloud/CloudLink.ts
 index 8986a5b19..7ae2308da 100644
 --- a/apps/server/src/cloud/CloudLink.ts
@@ -144,19 +112,6 @@ index 3cebfb22c..104ed35fb 100644
  
  export const layerTest = Layer.suspend(() =>
    layerModelCatalog.pipe(Layer.provideMerge(layerBundledOnly)),
-diff --git a/apps/server/src/server.ts b/apps/server/src/server.ts
-index f461a9918..900359a10 100644
---- a/apps/server/src/server.ts
-+++ b/apps/server/src/server.ts
-@@ -795,7 +795,7 @@ const layerMakeServer = Layer.unwrap(
-           );
-       }),
-     );
--    const layerTailscaleServe = config.tailscaleServeEnabled
-+    const layerTailscaleServe = false as boolean
-       ? Layer.effectDiscard(
-           Effect.acquireRelease(
-             Effect.gen(function* () {
 diff --git a/apps/server/src/telemetry/AnalyticsService.ts b/apps/server/src/telemetry/AnalyticsService.ts
 index 1e1873568..77ad26015 100644
 --- a/apps/server/src/telemetry/AnalyticsService.ts
