@@ -132,6 +132,16 @@ describe("readOpenCodeUsage", () => {
         next.files.flatMap((file) => file.records).map((record) => record.dedupeKey),
         ["opencode:msg-2"],
       );
+      yield* insert(
+        "msg-3",
+        message.sessionID,
+        JSON.stringify({ ...message, id: "msg-3", providerID: "litellm" }),
+      );
+      const direct = yield* readOpenCodeUsage(dir, 0, "litellm");
+      assert.deepStrictEqual(
+        direct.files.flatMap((file) => file.records).map((record) => record.dedupeKey),
+        ["opencode:msg-1", "opencode:msg-2"],
+      );
       assert.isAbove(Number((yield* fileSystem.stat(path.join(dir, "opencode.db-wal"))).size), 0);
     }).pipe(Effect.provide(NodeServices.layer)),
   );

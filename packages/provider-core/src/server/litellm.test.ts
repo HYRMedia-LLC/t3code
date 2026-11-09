@@ -493,8 +493,8 @@ describe.skipIf(windowsHost)("withLiteLLMLauncher", () => {
               HttpClientResponse.fromWeb(
                 request,
                 Response.json(
-                  request.url.endsWith("/key/info")
-                    ? { info: { spend: 2, max_budget: 10 } }
+                  request.url.endsWith("/user/info")
+                    ? { user_id: "u1", user_info: { spend: 2, max_budget: 10 } }
                     : {
                         data: [
                           {

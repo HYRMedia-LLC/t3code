@@ -476,17 +476,24 @@ export const codexUsageReader: ProviderUsageReader<
     }
     return speeds;
   }),
-  directories: Effect.fn("codexUsageReader.directories")(function* ({ config, environment }) {
+  directories: Effect.fn("codexUsageReader.directories")(function* ({
+    config,
+    environment,
+    launcherHomeDir,
+  }) {
     if (config === undefined) return [];
     const path = yield* Path.Path;
     const environmentHome = environment.CODEX_HOME?.trim();
     const layout = yield* resolveCodexHomeLayout(
-      config.setupMode !== "managed" &&
-        !config.homePath.trim() &&
-        !config.shadowHomePath.trim() &&
-        environmentHome
-        ? { ...config, homePath: environmentHome }
-        : config,
+      // Mirrors LITELLM_CODEX.configure: an empty homePath runs in the launcher's home.
+      launcherHomeDir !== undefined && !config.homePath.trim()
+        ? { ...config, homePath: launcherHomeDir }
+        : config.setupMode !== "managed" &&
+            !config.homePath.trim() &&
+            !config.shadowHomePath.trim() &&
+            environmentHome
+          ? { ...config, homePath: environmentHome }
+          : config,
     );
     return [{ dir: path.resolve(layout.sharedHomePath, "sessions") }];
   }),

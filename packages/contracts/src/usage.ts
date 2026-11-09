@@ -146,8 +146,19 @@ export const UsageTagCost = Schema.Struct({
 });
 export type UsageTagCost = typeof UsageTagCost.Type;
 
+/** Spend a LiteLLM gateway reports for one tag; `gateway` identifies the gateway and user. */
+export const UsageGatewayTagCost = Schema.Struct({
+  gateway: TrimmedNonEmptyString,
+  tag: TrimmedNonEmptyString,
+  costUsd: Schema.Number.check(Schema.isFinite(), Schema.isGreaterThanOrEqualTo(0)),
+  requests: NonNegativeInt,
+});
+export type UsageGatewayTagCost = typeof UsageGatewayTagCost.Type;
+
 export const UsageSummary = Schema.Struct({
   tagCosts: Schema.optional(ForwardCompatibleArray(UsageTagCost)),
+  /** Absent when no gateway reported tag spend; clients then show `tagCosts` estimates. */
+  gatewayTagCosts: Schema.optional(ForwardCompatibleArray(UsageGatewayTagCost)),
   contractVersion: Schema.Number,
   readAt: Schema.String,
   timeZone: TrimmedNonEmptyString,

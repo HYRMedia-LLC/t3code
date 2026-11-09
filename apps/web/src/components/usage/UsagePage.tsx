@@ -672,7 +672,10 @@ function UsageOverview({
                 <span className={figureClass(loadingPartial)}>
                   {formatCount(merged.sessions)} sessions
                 </span>
-                {metric === "cost" && " · API estimate"}
+                {metric === "cost" &&
+                  (merged.costQuality.providerReportedShare === 1
+                    ? " · Reported spend"
+                    : " · API estimate")}
               </span>
               {metric === "cost" && merged.costQuality.unpricedShare > 0 && (
                 <Popover>
@@ -782,7 +785,9 @@ function UsageOverview({
         </div>
       </section>
 
-      {metric === "cost" ? <UsageTagCosts rows={merged.tagCosts ?? []} /> : null}
+      {metric === "cost" ? (
+        <UsageTagCosts estimates={merged.tagCosts ?? []} gateway={merged.gatewayTagCosts} />
+      ) : null}
 
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-medium text-foreground">Totals</h2>

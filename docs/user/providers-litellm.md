@@ -64,26 +64,38 @@ subagents and background work. A `+` means some loaded turns have no price. Earl
 can be included when you load more history. Each priced turn keeps its estimate when rates
 change. This is an estimate, not billed spend.
 
-T3 Code reads rates from your gateway's `/model/info` and the current key budget from
-`/key/info`, with the key from your existing `lite` sign-in. The budget appears in thread
-details, **Usage > Limits**, and `/usage-limits`. It includes other clients that use the same
-key. Refresh the provider to check it now; automatic checks use the one-minute provider cache.
-A failed budget check does not block agent turns. Keys without a budget have no budget bar.
+T3 Code reads your budget from the gateway's `/user/info` and rates from `/model/info`, with
+the key from your existing `lite` sign-in and `LITELLM_PROXY_URL`. The budget appears in thread
+details, **Usage > Limits**, and `/usage-limits`. It is your user budget, so it includes other
+clients and keys you use. Refresh the provider to check it now; automatic checks use the
+one-minute provider cache. A failed budget check does not block agent turns. Users without a
+budget have no budget bar.
 
-This applies to LiteLLM Claude, Codex, and OpenCode. Models with missing rates or ambiguous
-prices have no estimate. The Usage cost history still uses its existing prices. T3 Code does
-not import proxy billing history or user and team budgets.
+### Usage History
 
-### Cost by Tag
+**Usage > Cost** and **Usage > Tokens** show the spend and tokens the gateway reports for your
+user (`/user/daily/activity`), not local estimates. This includes other clients you send
+through the same gateway. T3 Code does not read local transcripts from a LiteLLM instance's
+home, so that spend is not counted twice. If a direct (non-LiteLLM) instance shares that home,
+its history is skipped too.
 
-Open **Usage > Cost > Cost by request tag** to compare local estimates by tag and provider.
-Use the tag filter for a ticket, project, environment, tool, or custom tag. The selected
-period, environments, and providers apply to this view.
+- The gateway reports daily totals, so the hourly chart places each day's spend at 12:00 UTC.
+- The gateway does not record which harness sent a request. Spend is attributed by model:
+  Claude models to LiteLLM Claude, OpenAI models to LiteLLM Codex, and others to LiteLLM
+  OpenCode.
+- When you are signed out or the gateway cannot be reached, the source shows as failed in
+  **Usage** and no LiteLLM spend is shown.
 
-T3 Code records the tags sent with each turn. A later tag change does not move earlier
-costs. Tracking starts with new turns after this feature is installed. Untagged turns and
-activity from other clients are not included. Each row shows priced and unpriced turn counts.
-A turn can have several tags, so do not add the rows to get total spend.
+### Spend by Tag
+
+**Usage > Cost** shows spend by request tag from the gateway's `/tag/daily/activity`, limited
+to your keys. If the gateway refuses that request, T3 Code shows local estimates at gateway
+rates for the tags it saved with each turn. The section says which source it shows.
+
+Use the type menu, the provider menu (estimates only), or search to narrow the rows. Use
+**Hide tags** to remove tags you do not track, such as `tool:`; this browser remembers them.
+The selected period and environments apply to this view. A request can have several tags, so
+do not add the rows to get total spend.
 
 ## Request Tags
 

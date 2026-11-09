@@ -36,6 +36,7 @@ function parseOpenCodeMessage(
     readonly sessionId?: string;
     readonly timestampMs?: number;
   } = {},
+  skipProviderId?: string,
 ): UsageRecord | null {
   let parsed: unknown;
   try {
@@ -48,6 +49,11 @@ function parseOpenCodeMessage(
   const usage = object(message.tokens);
   const cache = object(usage.cache);
   const modelReference = object(message.model);
+  if (
+    skipProviderId !== undefined &&
+    (text(modelReference.providerID) || text(message.providerID)) === skipProviderId
+  )
+    return null;
   const model = text(modelReference.id) || text(modelReference.modelID) || text(message.modelID);
   const timestampMs = object(message.time).created ?? fallback.timestampMs;
   if (!model || typeof timestampMs !== "number" || !Number.isFinite(timestampMs)) return null;
@@ -104,6 +110,7 @@ const LEGACY_STAT_BATCH = 256;
 export const readOpenCodeUsage = Effect.fn("readOpenCodeUsage")(function* (
   root: string,
   sinceMs: number,
+  skipProviderId?: string,
 ): Effect.fn.Return<OpenCodeUsageReadResult, never, FileSystem.FileSystem | Path.Path> {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -202,11 +209,15 @@ export const readOpenCodeUsage = Effect.fn("readOpenCodeUsage")(function* (
           for (const row of rows) {
             append(
               file.records,
-              parseOpenCodeMessage(text(row.data), {
-                id: text(row.id),
-                sessionId: text(row.session_id),
-                ...(typeof row.created === "number" ? { timestampMs: row.created } : {}),
-              }),
+              parseOpenCodeMessage(
+                text(row.data),
+                {
+                  id: text(row.id),
+                  sessionId: text(row.session_id),
+                  ...(typeof row.created === "number" ? { timestampMs: row.created } : {}),
+                },
+                skipProviderId,
+              ),
             );
           }
           yield* Effect.yieldNow;
@@ -268,7 +279,9 @@ export const readOpenCodeUsage = Effect.fn("readOpenCodeUsage")(function* (
             const file = { path: entry, records: [] as UsageRecord[] };
             files.push(file);
             yield* fileSystem.readFileString(entry).pipe(
-              Effect.map((source) => append(file.records, parseOpenCodeMessage(source, { id }))),
+              Effect.map((source) =>
+                append(file.records, parseOpenCodeMessage(source, { id }, skipProviderId)),
+              ),
               Effect.catchTags({
                 PlatformError: (cause) => {
                   if (!isNotFound(cause)) error = true;
@@ -324,6 +337,10 @@ export const openCodeUsageReader: ProviderUsageReader<OpenCodeSettings, OpenCode
   kind: "scan",
   provider: "opencode",
   scan: Effect.fn("openCodeUsageReader.scan")(function* ({ instances, windowStartMs }) {
+    // The LiteLLM gateway reports spend for OpenCode's `litellm` provider.
+    const skipProviderId = instances.some((instance) => instance.launcher === "litellm")
+      ? "litellm"
+      : undefined;
     const roots = new Set<string>();
     for (const instance of instances) {
       for (const root of yield* resolveOpenCodeDataDirs(instance.environment)) roots.add(root);
@@ -331,7 +348,7 @@ export const openCodeUsageReader: ProviderUsageReader<OpenCodeSettings, OpenCode
     return yield* Effect.forEach(
       roots,
       (dir) =>
-        readOpenCodeUsage(dir, windowStartMs).pipe(
+        readOpenCodeUsage(dir, windowStartMs, skipProviderId).pipe(
           Effect.map((result) => ({
             dir,
             files: result.missing && !result.error ? null : result.files,
