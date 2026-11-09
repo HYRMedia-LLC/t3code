@@ -78,7 +78,7 @@ function environment(id: string, usageSummary: UsageSummary): EnvironmentUsage {
 }
 
 describe("mergeUsage", () => {
-  it("merges tag estimates by provider across environments without adding them to API totals", () => {
+  it("merges tag estimates across environments and counts each gateway once", () => {
     const row = {
       tag: "project:billing",
       provider: "claude" as const,
@@ -87,15 +87,22 @@ describe("mergeUsage", () => {
       unpricedTurns: 1,
     };
     const first = summary([], []);
+    const gatewayRow = {
+      gateway: "https://gw#u1",
+      tag: "project:billing",
+      costUsd: 5,
+      requests: 9,
+    };
     const merged = mergeUsage(
       [
-        environment("a", { ...first, tagCosts: [row] }),
-        environment("b", { ...first, tagCosts: [row] }),
+        environment("a", { ...first, tagCosts: [row], gatewayTagCosts: [gatewayRow] }),
+        environment("b", { ...first, tagCosts: [row], gatewayTagCosts: [gatewayRow] }),
         environment("old", first),
       ],
       USAGE_CONTRACT_VERSION,
     );
     expect(merged.tagCosts).toEqual([{ ...row, costUsd: 4, pricedTurns: 6, unpricedTurns: 2 }]);
+    expect(merged.gatewayTagCosts).toEqual([gatewayRow]);
     expect(merged.costUsd).toBe(0);
   });
 

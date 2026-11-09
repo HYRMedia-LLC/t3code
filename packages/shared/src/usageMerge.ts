@@ -8,6 +8,7 @@ import {
   type UsageSummary,
   type UsageTokenTotals,
   type UsageTagCost,
+  type UsageGatewayTagCost,
 } from "@t3tools/contracts";
 
 export interface EnvironmentUsage {
@@ -89,6 +90,8 @@ export interface UsageContractMismatch {
 
 export interface MergedUsage {
   readonly tagCosts?: readonly UsageTagCost[];
+  /** Absent when no environment reported gateway tag spend. */
+  readonly gatewayTagCosts?: readonly UsageGatewayTagCost[];
   readonly costUsd: number;
   readonly uncachedInputTokens: number;
   readonly cachedInputTokens: number;
@@ -342,6 +345,18 @@ export function mergeUsage(
             }
           : row,
       );
+    }
+  }
+  // Environments signed in to the same gateway report the same spend; keep the first report.
+  let gatewayTagCosts: UsageGatewayTagCost[] | undefined;
+  const gatewayOwners = new Map<string, EnvironmentId>();
+  for (const { environmentId, summary } of current) {
+    if (summary.gatewayTagCosts === undefined) continue;
+    gatewayTagCosts ??= [];
+    for (const row of summary.gatewayTagCosts) {
+      const owner = gatewayOwners.get(row.gateway) ?? environmentId;
+      gatewayOwners.set(row.gateway, owner);
+      if (owner === environmentId) gatewayTagCosts.push(row);
     }
   }
   const {
@@ -605,6 +620,13 @@ export function mergeUsage(
     duplicateSources: duplicates,
     contributingEnvironments,
     contractMismatches,
+    ...(gatewayTagCosts === undefined
+      ? {}
+      : {
+          gatewayTagCosts: [...gatewayTagCosts].sort(
+            (a, b) => b.costUsd - a.costUsd || a.tag.localeCompare(b.tag),
+          ),
+        }),
     tagCosts: [...tagTotals.values()].sort(
       (a, b) => b.costUsd - a.costUsd || a.tag.localeCompare(b.tag),
     ),

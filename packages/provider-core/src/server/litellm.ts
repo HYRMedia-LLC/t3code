@@ -295,6 +295,17 @@ const runLite = Effect.fn("LiteLLM.runLite")(function* (
   return yield* spawnAndCollect("lite", ChildProcess.make("lite", [...args], { env: environment }));
 });
 
+/** The gateway URL and the live key `lite` holds for it; the key never leaves the server. */
+export const readLiteLLMGatewayKey = Effect.fn("LiteLLM.readGatewayKey")(function* (
+  environment: NodeJS.ProcessEnv,
+) {
+  const baseUrl = environment.LITELLM_PROXY_URL?.trim();
+  if (!baseUrl) return Option.none();
+  const token = yield* runLite(["auth", "print-token"], environment).pipe(Effect.option);
+  const key = Option.isSome(token) && token.value.code === 0 ? token.value.stdout.trim() : "";
+  return key ? Option.some({ baseUrl, token: key }) : Option.none();
+});
+
 const checkStatus = Effect.fn("LiteLLM.checkStatus")(function* (
   environment: NodeJS.ProcessEnv,
 ): Effect.fn.Return<
@@ -525,6 +536,10 @@ const withGatewayModels = (
   };
 };
 
+/** The harness home a LiteLLM instance gets when its config names none. */
+export const liteLLMHomeDir = (path: Path.Path, stateDir: string, instanceId: string) =>
+  path.join(stateDir, "litellm", instanceId, "home");
+
 /**
  * Adds a `litellm` launcher to a driver. The variant writes a per-instance shim
  * that `exec`s `lite <harness>`, points the driver's `binaryPath` at it, and
@@ -552,7 +567,7 @@ export const withLiteLLMLauncher = <Config, R, UsageR>(
 
     const instanceDir = path.join(host.paths.stateDir, "litellm", input.instanceId);
     const binaryPath = path.join(instanceDir, "bin", spec.harness);
-    const homeDir = path.join(instanceDir, "home");
+    const homeDir = liteLLMHomeDir(path, host.paths.stateDir, input.instanceId);
     yield* Effect.gen(function* () {
       yield* fileSystem.makeDirectory(path.dirname(binaryPath), { recursive: true });
       yield* fileSystem.makeDirectory(homeDir, { recursive: true });

@@ -1960,6 +1960,39 @@ describe("UsageService", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("leaves a LiteLLM instance's home to the gateway and reports a gateway with no URL", () =>
+    Effect.gen(function* () {
+      const { transcript, settings, home } = yield* setup;
+      yield* Effect.promise(() => NodeFSP.writeFile(transcript, claudeLine(1, 5)));
+      const service = yield* makeWithServices(
+        layerService({
+          prefix: "usage-service-litellm-test",
+          home,
+          settings: {
+            ...settings,
+            providerInstances: {
+              ...settings.providerInstances,
+              [ProviderInstanceId.make("claude-gateway")]: {
+                driver: ProviderDriverKind.make("claudeAgent"),
+                launcher: "litellm",
+                config: { homePath: NodePath.join(home, "claude") },
+              },
+            },
+          },
+        }),
+      );
+      const summary = yield* service.readSummary(WINDOW);
+      assert.strictEqual(totalOutputTokens(summary), 0);
+      assert.deepStrictEqual(
+        summary.sources
+          .filter((source) => source.status === "failed")
+          .map((source) => [source.fingerprint.provider, source.message]),
+        [["claude", "Set LITELLM_PROXY_URL to read LiteLLM gateway spend."]],
+      );
+      assert.isUndefined(summary.gatewayTagCosts);
+    }),
+  );
+
   it.live("reads configured and disabled accounts once across shared and aliased homes", () =>
     Effect.gen(function* () {
       const { transcript, settings, home } = yield* setup;

@@ -1,9 +1,15 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import { CodexSettings, ProviderInstanceId } from "@t3tools/contracts";
 import { totalTokens } from "@t3tools/provider-core/server/usage";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
+import * as CodexUsageHistory from "../../usage/CodexUsageHistory.ts";
 import {
   type CodexScanState,
   codexUsageFormat,
+  codexUsageReader,
   initialCodexScanState,
   parseCodexLine as parseCodexRecords,
 } from "./codexUsage.ts";
@@ -810,4 +816,37 @@ describe("parseCodexLine", () => {
       }).toEqual({ processed: [160, 230], skipped: 0 });
     });
   });
+});
+
+const decodeCodexSettings = Schema.decodeSync(CodexSettings);
+
+it.layer(NodeServices.layer)("codexUsageReader.directories", (it) => {
+  const directories = (homePath: string, launcherHomeDir?: string) =>
+    codexUsageReader.kind === "transcripts"
+      ? codexUsageReader.directories({
+          instanceId: ProviderInstanceId.make("codex"),
+          config: decodeCodexSettings({ homePath }),
+          environment: { CODEX_HOME: "/env/codex" },
+          configured: true,
+          ...(launcherHomeDir === undefined ? {} : { launcherHomeDir }),
+        })
+      : Effect.die("Codex reads transcripts");
+  const run = (homePath: string, launcherHomeDir?: string) =>
+    directories(homePath, launcherHomeDir).pipe(
+      Effect.provideService(CodexUsageHistory.CodexUsageHistory, {
+        resolve: () => Effect.die("directories never resolves tiers"),
+      }),
+    );
+
+  it.effect("reads a LiteLLM instance's sessions from the launcher home", () =>
+    Effect.gen(function* () {
+      expect(yield* run("", "/state/litellm/codex/home")).toEqual([
+        { dir: "/state/litellm/codex/home/sessions" },
+      ]);
+      expect(yield* run("/custom", "/state/litellm/codex/home")).toEqual([
+        { dir: "/custom/sessions" },
+      ]);
+      expect(yield* run("")).toEqual([{ dir: "/env/codex/sessions" }]);
+    }),
+  );
 });

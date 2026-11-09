@@ -81,6 +81,10 @@ export interface ProviderUsageInstance<Config> {
   readonly config: Config | undefined;
   readonly environment: NodeJS.ProcessEnv;
   readonly configured: boolean;
+  /** Set when the instance runs through LiteLLM, whose gateway reports its spend. */
+  readonly launcher?: "litellm";
+  /** The home a launcher gives the harness when its config names none. */
+  readonly launcherHomeDir?: string;
 }
 
 export interface ProviderUsageScan {

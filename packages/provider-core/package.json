@@ -59,6 +59,10 @@
       "types": "./src/server/litellm.ts",
       "import": "./src/server/litellm.ts"
     },
+    "./server/litellmUsage": {
+      "types": "./src/server/litellmUsage.ts",
+      "import": "./src/server/litellmUsage.ts"
+    },
     "./server/maintenance": {
       "types": "./src/server/maintenance.ts",
       "import": "./src/server/maintenance.ts"

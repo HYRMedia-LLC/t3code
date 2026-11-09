@@ -25,7 +25,9 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { readTagCosts } from "./usageTagCosts.ts";
+import { gatewayDayTimestamp, readGatewayUsage } from "./liteLLMGatewayUsage.ts";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
@@ -36,12 +38,18 @@ import * as ServerSettings from "../serverSettings.ts";
 import { BUILT_IN_USAGE_DRIVERS, type BuiltInUsageReadersEnv } from "../provider/builtInDrivers.ts";
 import type { ProviderDriver } from "@t3tools/provider-core/server/driver";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
+import { liteLLMHomeDir } from "@t3tools/provider-core/server/litellm";
 import type {
   ProviderUsageInstance,
   TranscriptUsageFormat,
   UsageRecord,
 } from "@t3tools/provider-core/server/usage";
-import { canonicalModelFilter, resolveModelAliases, UsageAggregator } from "./usageAggregation.ts";
+import {
+  canonicalModelFilter,
+  makeDayFormatter,
+  resolveModelAliases,
+  UsageAggregator,
+} from "./usageAggregation.ts";
 import { createOverrideRateTable, parseRateTable, type RateTable } from "./usagePricing.ts";
 import {
   listTranscriptFiles,
@@ -156,6 +164,7 @@ export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const httpClient = yield* HttpClient.HttpClient;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const hostEnvironment = yield* HostProcess.Environment;
   const hostname = yield* HostProcess.Hostname;
   const readerContext = yield* Effect.context<BuiltInUsageReadersEnv>();
@@ -304,7 +313,11 @@ export const make = Effect.gen(function* () {
     settings: ServerSettingsValue,
   ) {
     const entries: Array<
-      readonly [ProviderInstanceId, Pick<ProviderInstanceConfig, "config" | "environment">, boolean]
+      readonly [
+        ProviderInstanceId,
+        Pick<ProviderInstanceConfig, "config" | "environment" | "launcher">,
+        boolean,
+      ]
     > = Object.entries(settings.providerInstances)
       .filter(([, instance]) => instance.driver === driver.driverKind)
       .map(([id, instance]) => [ProviderInstanceId.make(id), instance, true] as const);
@@ -323,6 +336,12 @@ export const make = Effect.gen(function* () {
             hostEnvironment,
           ),
           configured,
+          ...(instance.launcher === "litellm"
+            ? {
+                launcher: "litellm" as const,
+                launcherHomeDir: liteLLMHomeDir(path, config.stateDir, instanceId),
+              }
+            : {}),
         };
         return instanceConfig;
       }),
@@ -337,8 +356,19 @@ export const make = Effect.gen(function* () {
     const seen = new Set<string>();
     for (const { driver, reader } of transcriptReaders) {
       const { provider, format } = reader;
+      const instances = yield* usageInstances(driver, settings);
+      // The gateway reports LiteLLM spend, so a home a LiteLLM instance uses is not read twice.
+      const gatewayDirs = new Set(
+        yield* Effect.forEach(
+          (yield* Effect.forEach(
+            instances.filter((instance) => instance.launcher === "litellm"),
+            (instance) => reader.directories(instance),
+          )).flat(),
+          ({ dir }) => fileSystem.realPath(dir).pipe(Effect.orElseSucceed(() => dir)),
+        ),
+      );
       const directories = yield* Effect.forEach(
-        yield* usageInstances(driver, settings),
+        instances.filter((instance) => instance.launcher === undefined),
         (instance) => reader.directories(instance),
       );
       for (const { dir: directory, fileName } of directories.flat()) {
@@ -347,6 +377,7 @@ export const make = Effect.gen(function* () {
         const dir = yield* fileSystem
           .realPath(directory)
           .pipe(Effect.orElseSucceed(() => previous?.dir ?? directory));
+        if (gatewayDirs.has(dir)) continue;
         const currentVolumeId = yield* Effect.promise(() => readDirectoryVolumeId(dir));
         const hasRetainedHistory = fileCache
           .entries()
@@ -714,13 +745,36 @@ export const make = Effect.gen(function* () {
 
     const retentionCutoffMs = startedAtMs - CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
-    const [, scannedDirs] = yield* Effect.all(
+    const toDay = makeDayFormatter(input.timeZone);
+    const includesGatewayDay = (day: string) => {
+      const timestampMs = gatewayDayTimestamp(day);
+      if (hourlyWindow !== null)
+        return timestampMs >= hourlyWindow.sinceTimeMs && timestampMs < hourlyWindow.untilTimeMs;
+      const localDay = toDay(timestampMs);
+      return localDay >= input.sinceDay && localDay <= input.untilDay;
+    };
+    const gatewayDay = (offsetDays: number, from: string) =>
+      DateTime.formatIsoDateUtc(
+        DateTime.add(DateTime.makeUnsafe(`${from}T00:00:00Z`), { days: offsetDays }),
+      );
+    const [, transcriptDirs, gateway] = yield* Effect.all(
       [
         ensureRates(false),
         collectDirs(windowStartMs, settings, retentionCutoffMs, input.awaitRefresh === true),
+        readGatewayUsage(
+          settings,
+          hostEnvironment,
+          gatewayDay(-1, input.sinceDay),
+          gatewayDay(1, input.untilDay),
+          includesGatewayDay,
+        ).pipe(
+          Effect.provideService(HttpClient.HttpClient, httpClient),
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        ),
       ],
-      { concurrency: 2 },
+      { concurrency: 3 },
     );
+    const scannedDirs: ReadonlyArray<ScannedDir> = [...transcriptDirs, ...gateway.sources];
 
     const aggregator = new UsageAggregator({
       timeZone: input.timeZone,
@@ -890,6 +944,7 @@ export const make = Effect.gen(function* () {
       untilDay: input.untilDay,
       buckets: aggregated.buckets,
       tagCosts,
+      ...(gateway.tagCosts === undefined ? {} : { gatewayTagCosts: gateway.tagCosts }),
       sources,
       pricing: pricing(),
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),
