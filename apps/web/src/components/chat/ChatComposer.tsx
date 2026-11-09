@@ -52,6 +52,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
+import { formatComposerModelMention } from "@t3tools/client-runtime/composer-model-mentions";
 import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
@@ -213,6 +214,7 @@ import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDetail.logic";
 import { getComposerPromptInjectionState, getComposerReasoningStep } from "./composerProviderState";
 import { readPromptUltrathink } from "./TraitsPicker";
+import { useApplyThreadModelPick } from "./useApplyThreadModelPick";
 import {
   buildAttachmentVideoPreview,
   buildExpandedImagePreview,
@@ -608,6 +610,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const activePendingIsResponding = !holdingUserInput && incomingPendingIsResponding;
   const isLiteralPendingAnswer = activePendingProgress?.activeQuestion?.initialAnswer !== undefined;
   const isEditingQueuedMessage = editingQueuedAttachments !== null;
+  const applyThreadModelPick = useApplyThreadModelPick();
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
   const composerDraftTargetKeyRef = useRef("");
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the committed draft target key to a ref read by async handlers
@@ -1133,6 +1136,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     showSkillsInSlashMenu: settings.showSkillsInSlashMenu,
     workspaceSkillsScanning,
     questionAttachmentTarget,
+    modelMentions: { instanceEntries: providerInstanceEntries, modelOptionsByInstance },
   });
 
   const composerMenuOpen = Boolean(composerTrigger);
@@ -2010,6 +2014,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         addComposerDraftThreadContexts(attachmentDraftTarget, [record], {
           appendReference: false,
         });
+        setComposerHighlightedItemId(null);
+      }
+      return;
+    }
+    if (item.type === "model") {
+      if (trigger.kind !== "path") return;
+      const replacement = `${formatComposerModelMention(item.instanceId, item.model)} `;
+      const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+        snapshot.value,
+        trigger.rangeEnd,
+        replacement,
+      );
+      const applied = applyPromptReplacement(trigger.rangeStart, replacementRangeEnd, replacement, {
+        expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd),
+      });
+      if (applied) {
         setComposerHighlightedItemId(null);
       }
       return;
@@ -2979,6 +2999,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             model: selectedModel,
             persistSticky: true,
           });
+        applyThreadModelPick(composerDraftTarget);
         if (change.prompt !== promptRef.current) {
           applyPromptReplacementStable(0, promptRef.current.length, change.prompt, {
             expandedCursorAfterReplace: change.cursor,

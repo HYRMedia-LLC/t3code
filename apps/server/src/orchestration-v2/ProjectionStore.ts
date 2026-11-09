@@ -1012,6 +1012,7 @@ export type AgentAwarenessThread = ProjectThreadAwarenessV2Input["thread"] &
   Pick<
     OrchestrationV2ThreadShell,
     | "projectId"
+    | "creationSource"
     | "latestRunCompletedAt"
     | "archivedAt"
     | "activeRunId"
@@ -7179,6 +7180,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             Effect.map((state): AgentAwarenessThread => ({
               id: state.thread.id,
               projectId: state.thread.projectId,
+              creationSource: state.thread.creationSource,
               archivedAt: state.thread.archivedAt,
               activeRunId: state.activeRunId,
               latestRunId: state.latestRunId,

@@ -248,6 +248,19 @@ export function claudeGatewayModelSlug(gatewayId: string): string {
     .replace(/-\d{8}$/, "");
 }
 
+/** Claude reports dated IDs, such as `claude-opus-4-5-20251101`, that the catalog may not list. */
+export function resolveClaudeReportedModelSlug(
+  catalog: ClaudeModelCatalog,
+  reported: string,
+): string {
+  return (
+    (
+      resolveClaudeCatalogModel(catalog, reported) ??
+      resolveClaudeCatalogModel(catalog, reported.replace(/-\d{8}$/, ""))
+    )?.model.slug ?? reported
+  );
+}
+
 export function getClaudeCatalogModelCapabilities(
   catalog: ClaudeModelCatalog,
   slugOrAlias: string | null | undefined,
