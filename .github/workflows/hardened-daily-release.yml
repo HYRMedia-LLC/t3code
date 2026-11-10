@@ -37,7 +37,7 @@ jobs:
       - id: sync_token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.SYNC_APP_ID }}
+          client-id: ${{ secrets.SYNC_APP_CLIENT_ID }}
           private-key: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
 
       - id: merge
@@ -67,7 +67,7 @@ jobs:
     uses: ./.github/workflows/hardened-sync-resolve.yml
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      SYNC_APP_ID: ${{ secrets.SYNC_APP_ID }}
+      SYNC_APP_CLIENT_ID: ${{ secrets.SYNC_APP_CLIENT_ID }}
       SYNC_APP_PRIVATE_KEY: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
 
   release:
@@ -79,16 +79,16 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
+      # actions/checkout cannot do this here: removing its credential runs git submodule
+      # foreach, which fails on the .repos gitlinks. The tag push authenticates through gh.
       - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          ref: main
-          fetch-depth: 0
-          fetch-tags: true
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+        run: |
+          gh auth setup-git
+          git init --quiet .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git fetch --quiet --tags origin "+refs/heads/main:refs/remotes/origin/main"
+          git checkout --quiet -B main origin/main
 
       - id: changes
         name: Check for changes since the last release
