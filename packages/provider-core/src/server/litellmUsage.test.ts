@@ -124,7 +124,7 @@ describe("LiteLLM usage", () => {
       ),
     },
   });
-  const spendClient = (tagStatus: number) =>
+  const spendClient = (tagStatus: number, tagRows = true) =>
     HttpClient.make((request) => {
       const url = Option.getOrThrow(HttpClientRequest.toUrl(request));
       const page = Number(url.searchParams.get("page"));
@@ -153,9 +153,9 @@ describe("LiteLLM usage", () => {
               metadata: { has_more: page === 1 },
             }
           : {
-              results: [
-                day("2026-11-02", { "project:x": { spend: 2, api_requests: 4 } }, "entities"),
-              ],
+              results: tagRows
+                ? [day("2026-11-02", { "project:x": { spend: 2, api_requests: 4 } }, "entities")]
+                : [],
             };
       return Effect.succeed(
         HttpClientResponse.fromWeb(
@@ -185,11 +185,19 @@ describe("LiteLLM usage", () => {
     }).pipe(Effect.provideService(HttpClient.HttpClient, spendClient(200))),
   );
 
-  it.effect("keeps model spend when the gateway refuses tag spend", () =>
+  // LiteLLM scopes tag spend to stored keys, so users signed in with OAuth tokens get no rows.
+  it.effect("keeps model spend when the gateway refuses or omits tag spend", () =>
     Effect.gen(function* () {
-      const spend = yield* readLiteLLMSpend("https://gw", "secret", "2026-11-01", "2026-11-04");
-      assert.lengthOf(spend.models, 2);
-      assert.isUndefined(spend.tags);
-    }).pipe(Effect.provideService(HttpClient.HttpClient, spendClient(403))),
+      for (const client of [spendClient(403), spendClient(200, false)]) {
+        const spend = yield* readLiteLLMSpend(
+          "https://gw",
+          "secret",
+          "2026-11-01",
+          "2026-11-04",
+        ).pipe(Effect.provideService(HttpClient.HttpClient, client));
+        assert.lengthOf(spend.models, 2);
+        assert.isUndefined(spend.tags);
+      }
+    }),
   );
 });

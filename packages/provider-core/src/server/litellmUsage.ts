@@ -77,7 +77,10 @@ export interface LiteLLMSpend {
 export interface LiteLLMGatewaySpend {
   readonly userId: string;
   readonly models: ReadonlyArray<LiteLLMSpend>;
-  /** Undefined when the gateway refuses tag spend for this key. */
+  /**
+   * Undefined when the gateway refuses or omits tag spend. LiteLLM scopes it to stored keys, and
+   * OAuth sign-ins bill each refreshed access token as a new key, so their tag spend reads empty.
+   */
   readonly tags: ReadonlyArray<LiteLLMSpend> | undefined;
 }
 
@@ -169,7 +172,10 @@ export const readLiteLLMSpend = Effect.fn("LiteLLM.readSpend")(function* (
     models: flattenLiteLLMActivity(models, "models"),
     tags: Option.match(tags, {
       onNone: () => undefined,
-      onSome: (pages) => flattenLiteLLMActivity(pages, "entities"),
+      onSome: (pages) => {
+        const rows = flattenLiteLLMActivity(pages, "entities");
+        return rows.length === 0 ? undefined : rows;
+      },
     }),
   } satisfies LiteLLMGatewaySpend;
 });

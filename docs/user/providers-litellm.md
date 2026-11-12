@@ -89,8 +89,10 @@ its history is skipped too.
 ### Spend by Tag
 
 **Usage > Cost** shows spend by request tag from the gateway's `/tag/daily/activity`, limited
-to your keys. If the gateway refuses that request, T3 Code shows local estimates at gateway
-rates for the tags it saved with each turn. The section says which source it shows.
+to your keys. If the gateway refuses that request or reports no tag spend, T3 Code shows local
+estimates at gateway rates for the tags it saved with each turn. The section says which source it
+shows. Gateways that sign you in with OAuth (the `lite` SSO default) usually report no tag spend,
+because they give each renewed sign-in a new key.
 
 Use the type menu, the provider menu (estimates only), or search to narrow the rows. Use
 **Hide tags** to remove tags you do not track, such as `tool:`; this browser remembers them.
