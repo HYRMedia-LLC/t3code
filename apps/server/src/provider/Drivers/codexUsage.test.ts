@@ -823,13 +823,16 @@ const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 it.layer(NodeServices.layer)("codexUsageReader.directories", (it) => {
   const directories = (homePath: string, launcherHomeDir?: string) =>
     codexUsageReader.kind === "transcripts"
-      ? codexUsageReader.directories({
-          instanceId: ProviderInstanceId.make("codex"),
-          config: decodeCodexSettings({ homePath }),
-          environment: { CODEX_HOME: "/env/codex" },
-          configured: true,
-          ...(launcherHomeDir === undefined ? {} : { launcherHomeDir }),
-        })
+      ? codexUsageReader.directories(
+          {
+            instanceId: ProviderInstanceId.make("codex"),
+            config: decodeCodexSettings({ homePath }),
+            environment: { CODEX_HOME: "/env/codex" },
+            configured: true,
+            ...(launcherHomeDir === undefined ? {} : { launcherHomeDir }),
+          },
+          { awaitRefresh: true },
+        )
       : Effect.die("Codex reads transcripts");
   const run = (homePath: string, launcherHomeDir?: string) =>
     directories(homePath, launcherHomeDir).pipe(

@@ -132,19 +132,16 @@ index 1e1873568..77ad26015 100644
    flushBatchSize: Config.Number("T3CODE_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
    maxBufferedEvents: Config.Number("T3CODE_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
      Config.withDefault(1_000),
-diff --git a/apps/web/src/branding.ts b/apps/web/src/branding.ts
-index 7d14e2cea..b77e71882 100644
---- a/apps/web/src/branding.ts
-+++ b/apps/web/src/branding.ts
-@@ -20,7 +20,7 @@ export const APP_BASE_NAME = injectedDesktopAppBranding?.baseName ?? "T3 Code";
- export const APP_STAGE_LABEL =
-   injectedDesktopAppBranding?.stageLabel ??
-   HOSTED_APP_CHANNEL_LABEL ??
--  (import.meta.env.DEV ? "Dev" : "Beta");
-+  (import.meta.env.DEV ? "Dev" : "Hardened");
- export const APP_DISPLAY_NAME =
-   injectedDesktopAppBranding?.displayName ??
-   formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel: APP_STAGE_LABEL });
+diff --git a/apps/web/src/branding.logic.ts b/apps/web/src/branding.logic.ts
+--- a/apps/web/src/branding.logic.ts
++++ b/apps/web/src/branding.logic.ts
+@@ -23,5 +23,5 @@ export function resolveWebAppStageLabel(input: {
+ }): string {
+   return (
+-    resolveHostedAppChannelLabel(input.hostedAppChannel) ?? (input.development ? "Dev" : "Beta")
++    resolveHostedAppChannelLabel(input.hostedAppChannel) ?? (input.development ? "Dev" : "Hardened")
+   );
+ }
 diff --git a/apps/web/src/cloud/publicConfig.ts b/apps/web/src/cloud/publicConfig.ts
 index 9f1238b85..9d20f0355 100644
 --- a/apps/web/src/cloud/publicConfig.ts
