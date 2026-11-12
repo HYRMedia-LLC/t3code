@@ -1914,8 +1914,8 @@ describe("UsageService", () => {
         await NodeFSP.writeFile(NodePath.join(directory, "msg_priced.json"), priced);
         await NodeFSP.writeFile(NodePath.join(directory, "msg_unpriced.json"), unpriced);
       });
-      const service = yield* UsageService.make.pipe(
-        Effect.provide(layerService({ prefix: "usage-service-unpriced-tokens", home, settings })),
+      const service = yield* makeWithServices(
+        layerService({ prefix: "usage-service-unpriced-tokens", home, settings }),
       );
       const summary = yield* service.readSummary(WINDOW);
       const model = mergeUsage(
