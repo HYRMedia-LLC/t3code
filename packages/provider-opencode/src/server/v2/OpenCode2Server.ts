@@ -30,6 +30,8 @@ export class OpenCode2Server extends Context.Service<
       use: (connection: OpenCode2Connection) => Effect.Effect<A, E, R>,
       launchEnvironment?: Readonly<Record<string, string>>,
     ) => Effect.Effect<A, E | OpenCodeRuntime.OpenCodeRuntimeError, R>;
+    /** Drops a configured server's verified connection, so the next use reads its version again. */
+    readonly forget: Effect.Effect<void>;
   }
 >()("@t3tools/provider-opencode/server/v2/OpenCode2Server") {}
 
@@ -149,6 +151,9 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
           Effect.flatMap(use),
         );
       }),
+      forget: Effect.sync(() => {
+        latest = undefined;
+      }),
     });
   }
 
@@ -195,5 +200,6 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
           : use(connection);
       });
     }),
+    forget: Effect.void,
   });
 });
