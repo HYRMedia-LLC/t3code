@@ -1,5 +1,8 @@
 import { stripInlineContextReferences } from "./lib/composerContextReferences";
-import { composerFileAttachmentMimeType } from "./components/chat/composerAttachmentFiles";
+import {
+  composerFileAttachmentMimeType,
+  composerImageDedupKey,
+} from "./components/chat/composerAttachmentFiles";
 import { elementContextToPreviewAnnotation } from "./lib/elementContext";
 import {
   ResponseContextRecord,
@@ -911,11 +914,6 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
     interactionMode: null,
     requestTags: "",
   };
-}
-
-function composerImageDedupKey(image: ComposerImageAttachment): string {
-  // Hydrated images get fresh lastModified values, so exclude it from dedupe.
-  return `${image.mimeType}\u0000${image.sizeBytes}\u0000${image.name}`;
 }
 
 export function composerFileDedupKey(
