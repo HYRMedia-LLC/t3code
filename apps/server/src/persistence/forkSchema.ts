@@ -27,10 +27,12 @@ const restoreUpstreamMigrationIds = Effect.fn("restoreUpstreamMigrationIds")(fun
 
 // Fork schema must stay out of Migrations.ts. A fork id moves upstream's ids and conflicts on each
 // sync, and a high id does not help because the migrator skips all ids below the highest recorded.
-export const runMigrationsWithForkSchema = Effect.fn("runMigrationsWithForkSchema")(function* () {
+export const withForkSchema = Effect.fn("withForkSchema")(function* <E, R>(
+  migrate: Effect.Effect<unknown, E, R>,
+) {
   const sql = yield* SqlClient.SqlClient;
   yield* restoreUpstreamMigrationIds();
-  yield* runMigrations();
+  yield* migrate;
   const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(scheduled_tasks)`;
   if (!columns.some((column) => column.name === "request_tags_json")) {
     yield* sql`
@@ -39,3 +41,5 @@ export const runMigrationsWithForkSchema = Effect.fn("runMigrationsWithForkSchem
     `;
   }
 });
+
+export const runMigrationsWithForkSchema = () => withForkSchema(runMigrations());
