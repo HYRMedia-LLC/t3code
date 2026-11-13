@@ -17,6 +17,7 @@ The merged code must keep upstream's behavior and every fork feature. Fork featu
 1. If `pnpm-lock.yaml` was conflicted, resolve it, then run `vp i`.
 2. Run `vp run typecheck`. Fix what the merge broke, including files that merged without a conflict.
 3. Run `vp test run <files>` from the owning package for the tests beside each file you changed.
-4. Give one line per conflicted file that states your decision.
+4. Run every test file under "Fork tests" at the end of this prompt the same way, grouped by owning package, even when its package had no conflict. They guard fork features, and upstream changes that merged cleanly can break them. Fix what the merge broke, in fork code where you can. Skip a listed file that the merge removed.
+5. Give one line per conflicted file that states your decision, then one line on the fork tests: all passed, or which still fail and why.
 
 If you cannot resolve a conflict correctly, leave its markers in place and say why. A person will finish it. Do not guess.
