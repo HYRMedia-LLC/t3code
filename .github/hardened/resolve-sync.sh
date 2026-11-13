@@ -27,6 +27,12 @@ if git merge-base --is-ancestor upstream/main HEAD; then
   exit 0
 fi
 
+# The tests the fork added or changed since the last upstream commit it merged. Upstream can break
+# them in files that merge without a conflict, so the agent runs all of them, not only the tests
+# beside the files it edits. Browser tests need Chromium, which this job does not install.
+fork_tests="$(git diff --name-only --diff-filter=AM "$(git merge-base HEAD upstream/main)" HEAD -- \
+  '*.test.ts' '*.test.tsx' ':!*.browser.test.tsx')"
+
 summary="Upstream merged without a conflict."
 if ! git merge --no-ff --no-commit upstream/main >/dev/null; then
   conflicts="$(git diff --name-only --diff-filter=U)"
@@ -37,6 +43,7 @@ if ! git merge --no-ff --no-commit upstream/main >/dev/null; then
   {
     cat "$TOOLS/resolve-sync-prompt.md"
     printf '\n## Conflicted files\n\n%s\n' "$conflicts"
+    printf '\n## Fork tests\n\n%s\n' "${fork_tests:-None.}"
   } | CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 claude -p --bare --restricted --strict-mcp-config \
     --no-session-persistence --model "$MODEL" --effort high --max-budget-usd "$MAX_BUDGET_USD" \
     --tools "Read,Edit,Write,Glob,Grep,Bash" \
