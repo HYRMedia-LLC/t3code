@@ -196,7 +196,9 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       }),
     ),
     Layer.provideMerge(layerBackgroundPolicyAlwaysRun),
-    Layer.provideMerge(ServerSettings.layerTest()),
+    // Update checks run a real `npm view` with its cache in the temp state dir, which is
+    // removed before the lookup is interrupted; npm writing there fails the teardown.
+    Layer.provideMerge(ServerSettings.layerTest({ enableProviderUpdateChecks: false })),
     Layer.provideMerge(layerTestHttpClient),
     Layer.provideMerge(ServerSettings.layerTest()),
     Layer.provideMerge(

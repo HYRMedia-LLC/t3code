@@ -20,6 +20,8 @@ import {
   readThread,
   unavailable,
 } from "../../threadAccess.ts";
+import { providerOptionDescriptors, refuseAgentModePick } from "../../delegatedTaskModes.ts";
+import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
 import type * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
@@ -250,6 +252,18 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
         }
         const modelSelection = input.modelSelection;
         if (modelSelection !== undefined) {
+          const providers = yield* (yield* ProviderRegistry.ProviderRegistry).getProviders;
+          yield* refuseAgentModePick({
+            callerRuntimeMode: (yield* readCaller()).limits.runtimeMode,
+            picked: modelSelection.options,
+            descriptors: providerOptionDescriptors(
+              providers.find((provider) => provider.instanceId === modelSelection.instanceId),
+            ),
+            held:
+              thread.modelSelection.instanceId === modelSelection.instanceId
+                ? thread.modelSelection.options
+                : undefined,
+          });
           const type = modelSelectionCommandType(thread.providerInstanceId, modelSelection);
           sequence = (yield* threads
             .dispatch({

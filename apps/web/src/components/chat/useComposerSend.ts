@@ -14,7 +14,7 @@ import {
   formatOutgoingPrompt,
   optimisticMessageAttachments,
   planComposerTurn,
-  sendTitleFallbackLabels,
+  deriveComposerSendTitle,
   snapshotComposerSend,
   withMessageContext,
   makeThreadErrorSetter,
@@ -35,7 +35,6 @@ import {
   RuntimeMode,
 } from "@t3tools/contracts";
 import { supportsLiteLLMRequestTags } from "../../modelSelection";
-import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
 import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
 import {
   declinePendingApprovals,
@@ -706,14 +705,7 @@ export function useComposerSend(input: ComposerSendInput) {
               })),
             }),
           }),
-          titleSeed: deriveThreadTitleSeed(
-            {
-              text: snapshot.messageText,
-              attachments: snapshot.attachments,
-              fallbackLabels: sendTitleFallbackLabels(snapshot),
-            },
-            m,
-          ),
+          titleSeed: deriveComposerSendTitle(snapshot),
         });
       }).finally(() => {
         sendInFlightRef.current = false;
@@ -1053,12 +1045,24 @@ export function useComposerSend(input: ComposerSendInput) {
         .getState()
         .getComposerDraft(composerDraftTarget);
       sendInFlightRef.current = true;
+      // The commands are read as they are now, which takes a round trip, so the send shows as sending.
+      const showsWait = isCurrentRouteThread();
+      if (showsWait) {
+        beginLocalDispatch({
+          preparingWorktree: true,
+          submissionIntent:
+            submissionIntent === "background" && !isLocalDraftThread
+              ? "foreground"
+              : submissionIntent,
+        });
+      }
       const layoutApproval = await ensureWorktreeLayoutApproved({
         environmentId,
         projectId: activeProject.id,
         projectTitle: activeProject.title,
       }).finally(() => {
         sendInFlightRef.current = false;
+        if (showsWait && isCurrentRouteThread()) resetLocalDispatch();
       });
       if (layoutApproval.status === "cancelled") return;
       if (layoutApproval.status === "blocked") {
@@ -1471,14 +1475,7 @@ export function useComposerSend(input: ComposerSendInput) {
       composerRef.current?.resetCursorState();
     }
 
-    const title = deriveThreadTitleSeed(
-      {
-        text: messageTextForSend,
-        attachments: composerAttachmentsSnapshot,
-        fallbackLabels: sendTitleFallbackLabels(sendSnapshot),
-      },
-      m,
-    );
+    const title = deriveComposerSendTitle(sendSnapshot);
     const threadCreateModelSelection = createModelSelection(
       ctxSelectedModelSelection.instanceId,
       ctxSelectedModel || activeProjectDefaultModelSelection?.model || DEFAULT_MODEL,
